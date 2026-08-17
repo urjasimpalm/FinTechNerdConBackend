@@ -30,3 +30,8 @@ jobs:
       - name: Deploy database migrations
         run: |
           supabase db push
+
+      - name: Deploy edge functions
+        run: |
+          supabase functions deploy login register config \
+            --project-ref $PROJECT_REF

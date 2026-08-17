@@ -1,0 +1,7 @@
+{
+  // Edge functions run on Deno, not Node. Without this the editor's TypeScript
+  // server reports "Cannot find name 'Deno'" on files that type-check fine.
+  "deno.enable": true,
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.lint": true
+}

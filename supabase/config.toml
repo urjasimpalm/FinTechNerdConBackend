@@ -1,0 +1,44 @@
+# Matches the container names of the already-running local stack
+# (supabase_db_FinTechNerdConBackend), which the CLI derived from the directory
+# name while this file was missing.
+project_id = "FinTechNerdConBackend"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = []
+jwt_expiry = 3600
+enable_signup = true
+
+[storage]
+enabled = true
+
+[analytics]
+enabled = false
+
+# auth/login, auth/register and config are reached before the caller has a
+# session, so they must not require a JWT. They still need the project's anon key
+# in the apikey header, and they validate their own input.
+[functions.login]
+verify_jwt = false
+
+[functions.register]
+verify_jwt = false
+
+[functions.config]
+verify_jwt = false

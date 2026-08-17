@@ -1,0 +1,1364 @@
+{
+  "info": {
+    "name": "FinTechNerdCon Backend",
+    "description": "Front-end API collection for the FinTechNerdCon Supabase backend.\n\nMirrors docs/API.md. Two kinds of endpoint:\n\n- `/functions/v1/...` edge functions (register, login, config) — public, anon key only\n- `/rest/v1/...` auto-generated REST over the tables, guarded by row-level security — needs the access token from login\n\n## Setup\n\n1. Import the environment file next to this collection (`FinTechNerdCon.postman_environment.json`) and select it.\n2. For a deployed project set `base_url` to `https://<project-ref>.supabase.co` and `anon_key` to the project's anon/publishable key.\n3. Run **1. Auth → Login**. Its test script stores `access_token`, `refresh_token` and `user_id` as collection variables, so every later request is authenticated automatically.\n\nThe collection sends `Authorization: Bearer {{access_token}}` by default; the public endpoints override this with no auth.\n\nAssertions accept every status the API documents for a request (e.g. Register passes on 201, 403 and 409), so a full collection run stays green whether or not the test email is on the attendee list.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:54321", "type": "string" },
+    { "key": "anon_key", "value": "", "type": "string" },
+    { "key": "access_token", "value": "", "type": "string" },
+    { "key": "refresh_token", "value": "", "type": "string" },
+    { "key": "user_id", "value": "", "type": "string" },
+    { "key": "test_email", "value": "you@example.com", "type": "string" },
+    { "key": "test_password", "value": "Passw0rd!23", "type": "string" },
+    { "key": "other_user_id", "value": "", "type": "string" },
+    { "key": "chat_id", "value": "", "type": "string" },
+    { "key": "agenda_id", "value": "", "type": "string" },
+    { "key": "notification_id", "value": "", "type": "string" },
+    { "key": "guild_id", "value": "1", "type": "string" },
+    { "key": "mission_id", "value": "1", "type": "string" },
+    { "key": "user_type_config_id", "value": "1", "type": "string" },
+    { "key": "allow_destructive", "value": "false", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "description": "Register, login and session handling. All public — anon key only, no bearer token.",
+      "item": [
+        {
+          "name": "Check email on attendee list",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Authorization", "value": "Bearer {{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/rpc/is_email_in_stack",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "rpc", "is_email_in_stack"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"p_email\": \"{{test_email}}\"\n}"
+            },
+            "description": "Registration is invite-only. Returns a bare `true`/`false` — case-insensitive, trimmed, never errors on a miss.\n\n| Parameter | Type | Required |\n| --- | --- | --- |\n| p_email | string | yes |\n\nOptional pre-screen: Register performs the same check itself."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns a boolean', () => pm.expect(pm.response.json()).to.be.a('boolean'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/register",
+              "host": ["{{base_url}}"],
+              "path": ["functions", "v1", "register"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\",\n  \"user_type_config_id\": {{user_type_config_id}},\n  \"guild_id\": {{guild_id}},\n  \"company_name\": \"Simpalm\",\n  \"job_title\": \"Engineer\"\n}"
+            },
+            "description": "| Parameter | Type | Required | Constraints |\n| --- | --- | --- | --- |\n| email | string | yes | Valid email, must be on the attendee list |\n| password | string | yes | Min 8 characters |\n| first_name | string | yes | Non-empty |\n| last_name | string | yes | Non-empty |\n| user_type_config_id | integer | no | configs.id where type = 'user_type' |\n| guild_id | integer | no | guilds.id |\n| company_name | string | no | |\n| job_title | string | no | |\n| profile_image | string | no | URL |\n| device_type | integer | no | Push delivery |\n| device_token | string | no | FCM/APNs token |\n\nResponses:\n\n- **201** — created and signed in; returns the same `data` shape as Login\n- **403** `email_in_stack: false` — not on the attendee list, nothing created\n- **409** — already registered, send the user to Login\n- **400** — missing/invalid field, password under 8 chars, bad guild_id/user_type_config_id\n\nReturns a session, so do not call Login afterwards."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([201, 400, 403, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('access_token', body.data.token);",
+                  "  pm.collectionVariables.set('refresh_token', body.data.refresh_token);",
+                  "  pm.collectionVariables.set('user_id', body.data.user.id);",
+                  "  pm.test('returns a session and profile', () => {",
+                  "    pm.expect(body.data.token).to.be.a('string');",
+                  "    pm.expect(body.data.user.id).to.be.a('string');",
+                  "  });",
+                  "} else {",
+                  "  console.log('Register skipped:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/login",
+              "host": ["{{base_url}}"],
+              "path": ["functions", "v1", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\"\n}"
+            },
+            "description": "| Parameter | Type | Required |\n| --- | --- | --- |\n| email | string | yes |\n| password | string | yes |\n\nResponses:\n\n- **200** `{ success, message, data: { token, token_type, expires_in, expires_at, refresh_token, user } }`\n- **401** `Invalid email or password.` — returned for both a wrong password and an unknown email, on purpose. Do not try to tell them apart in the UI\n- **400** — email or password missing\n- **405** — must be POST\n\nThe test script stores `access_token`, `refresh_token` and `user_id` for the rest of the collection."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('access_token', body.data.token);",
+                  "  pm.collectionVariables.set('refresh_token', body.data.refresh_token);",
+                  "  pm.collectionVariables.set('user_id', body.data.user.id);",
+                  "  pm.test('token stored', () => pm.expect(pm.collectionVariables.get('access_token')).to.be.a('string').and.not.empty);",
+                  "} else {",
+                  "  console.log('Login failed:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/v1/token?grant_type=refresh_token",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "v1", "token"],
+              "query": [{ "key": "grant_type", "value": "refresh_token" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "description": "Access tokens expire after 1 hour (`expires_in`). Handled automatically by supabase-js when you call `setSession` — this request is the raw equivalent for clients that store tokens themselves.\n\nReturns a fresh `access_token` and `refresh_token`; the old refresh token is consumed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('access_token', body.access_token);",
+                  "  pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "}",
+                  "pm.test('documented status', () => pm.expect([200, 400, 401]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/v1/logout",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "v1", "logout"]
+            },
+            "description": "Revokes the session (`supabase.auth.signOut()` in the app). Returns 204.\n\nSkipped unless `allow_destructive` is `true`, so a whole-collection run doesn't end the session the later folders depend on. Send it on its own whenever you like."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.collectionVariables.get('allow_destructive') !== 'true') {",
+                  "  console.log('Skipping Logout — set allow_destructive to true to run it.');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('documented status', () => pm.expect([204, 401]).to.include(pm.response.code));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Config",
+      "description": "Lookup lists for pickers. Public — the register screen needs guilds and user types before the user has a token.\n\nKeys in `data` are the literal `configs.type` values, so hyphenated ones need bracket access: `data[\"event-quest\"]`.\n\nResponses carry `Cache-Control: public, max-age=300` — fetch once at app start.",
+      "item": [
+        {
+          "name": "All config",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/config",
+              "host": ["{{base_url}}"],
+              "path": ["functions", "v1", "config"]
+            },
+            "description": "Every lookup list in one call:\n\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"guilds\":      [{ \"id\": 1, \"name\": \"AI & Agentic Systems\", \"description\": \"...\" }],\n    \"user_type\":   [{ \"id\": 1, \"name\": \"Builder\" }],\n    \"event-quest\": [{ \"id\": 4, \"name\": \"Main Quests\" }],\n    \"event-day\":   [{ \"id\": 8, \"name\": \"Day 0\" }],\n    \"stage-type\":  [{ \"id\": 11, \"name\": \"Stage 1\" }]\n  }\n}\n```\n\nIds are one shared sequence across all types, so always match on `type` + `id`, never `id` alone."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('has guilds and user_type', () => {",
+                  "  const d = pm.response.json().data;",
+                  "  pm.expect(d.guilds).to.be.an('array');",
+                  "  pm.expect(d.user_type).to.be.an('array');",
+                  "});",
+                  "pm.test('cacheable', () => pm.expect(pm.response.headers.get('cache-control')).to.include('max-age'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Guilds only",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/config/guilds",
+              "host": ["{{base_url}}"],
+              "path": ["functions", "v1", "config", "guilds"]
+            },
+            "description": "Guild rows include `description`; config rows are `{ id, name }`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('only guilds returned', () => pm.expect(Object.keys(pm.response.json().data)).to.eql(['guilds']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "One config type",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/config/user_type",
+              "host": ["{{base_url}}"],
+              "path": ["functions", "v1", "config", "user_type"]
+            },
+            "description": "Path segment is `guilds` or any `configs.type` value: `user_type`, `event-quest`, `event-day`, `stage-type`.\n\nAn unknown segment returns **404** with the available list — a typo is surfaced rather than answered with an empty array."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('only the requested type', () => pm.expect(Object.keys(pm.response.json().data)).to.eql(['user_type']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Several config types",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/config?type=event-day,stage-type",
+              "host": ["{{base_url}}"],
+              "path": ["functions", "v1", "config"],
+              "query": [{ "key": "type", "value": "event-day,stage-type" }]
+            },
+            "description": "| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| type | string | no | Comma-separated `configs.type` values. Ignored if a path segment is given |\n\nUnlike the path form, an unknown value here returns `{\"nope\": []}` with 200 rather than 404, so one bad entry doesn't derail a multi-type request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('both types returned', () => {",
+                  "  const keys = Object.keys(pm.response.json().data);",
+                  "  pm.expect(keys).to.include.members(['event-day', 'stage-type']);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown type (404)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/config/typo",
+              "host": ["{{base_url}}"],
+              "path": ["functions", "v1", "config", "typo"]
+            },
+            "description": "Returns `{ success: false, message, available: [...] }` — handy when wiring up the client."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));",
+                  "pm.test('lists available types', () => pm.expect(pm.response.json().available).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Profile & directory",
+      "description": "Table `users`. Rows are created only by Register. Every signed-in user can read the whole directory but update/delete only their own row.\n\nUpdatable: first_name, last_name, user_type_config_id, guild_id, company_name, job_title, profile_image, device_type, device_token. (`email` lives in auth — use `supabase.auth.updateUser`.)\n\n**A write to a row you don't own returns `200 []`, not an error** — RLS filters it out. Treat an empty array as \"not yours\".",
+      "item": [
+        {
+          "name": "My profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/users?select=*&id=eq.{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "users"],
+              "query": [
+                { "key": "select", "value": "*" },
+                { "key": "id", "value": "eq.{{user_id}}" }
+              ]
+            },
+            "description": "Returns an array with one row. Columns: id, first_name, last_name, email, user_type_config_id, guild_id, company_name, job_title, profile_image, device_type, device_token, created_at, updated_at."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('one row for me', () => {",
+                  "  const rows = pm.response.json();",
+                  "  pm.expect(rows).to.be.an('array').with.lengthOf(1);",
+                  "  pm.expect(rows[0].id).to.eql(pm.collectionVariables.get('user_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Prefer", "value": "return=representation" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/users?id=eq.{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "users"],
+              "query": [{ "key": "id", "value": "eq.{{user_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_title\": \"Engineer\",\n  \"company_name\": \"Simpalm\",\n  \"guild_id\": {{guild_id}},\n  \"user_type_config_id\": {{user_type_config_id}}\n}"
+            },
+            "description": "Send only the fields you are changing. `Prefer: return=representation` returns the updated row (this is what supabase-js does when you chain `.select()`).\n\nRegister a push token by patching `device_type` and `device_token` here after login."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('row updated', () => pm.expect(pm.response.json()).to.be.an('array').with.lengthOf(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Attendee directory",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/users?select=id,first_name,last_name,company_name,job_title,profile_image,guilds(name)&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "users"],
+              "query": [
+                { "key": "select", "value": "id,first_name,last_name,company_name,job_title,profile_image,guilds(name)" },
+                { "key": "limit", "value": "20" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "`guilds(name)` embeds the guild through the foreign key. Page with `limit` / `offset`; add the header `Prefer: count=exact` to get the total in the `Content-Range` response header."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns an array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Directory filtered by guild",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/users?select=id,first_name,last_name,company_name&guild_id=eq.{{guild_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "users"],
+              "query": [
+                { "key": "select", "value": "id,first_name,last_name,company_name" },
+                { "key": "guild_id", "value": "eq.{{guild_id}}" }
+              ]
+            },
+            "description": "Filter operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `in`, `is`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search attendees by name",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/users?select=id,first_name,last_name,company_name&or=(first_name.ilike.*es*,last_name.ilike.*es*)",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "users"],
+              "query": [
+                { "key": "select", "value": "id,first_name,last_name,company_name" },
+                { "key": "or", "value": "(first_name.ilike.*es*,last_name.ilike.*es*)" }
+              ]
+            },
+            "description": "`*` is the wildcard in PostgREST's `ilike` (it maps to SQL `%`). Replace `es` with the search term."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete my account (incomplete — see description)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/users?id=eq.{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "users"],
+              "query": [{ "key": "id", "value": "eq.{{user_id}}" }]
+            },
+            "description": "**Known gap.** This returns 204 and removes the profile row, but the `auth.users` record survives (the cascade only runs the other way), so that email can never be re-registered.\n\nDon't ship this as the delete-account button — it needs an edge function that removes both.\n\nSkipped unless `allow_destructive` is `true`, so a whole-collection run doesn't wipe your test account."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.collectionVariables.get('allow_destructive') !== 'true') {",
+                  "  console.log('Skipping account deletion — set allow_destructive to true to run it.');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('documented status', () => pm.expect([204, 401]).to.include(pm.response.code));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Reference data (direct)",
+      "description": "The same data as the Config function, read straight from the tables. Needs a session; useful when you want to filter server-side.",
+      "item": [
+        {
+          "name": "Guilds",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/guilds?select=id,name,description&order=id",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "guilds"],
+              "query": [
+                { "key": "select", "value": "id,name,description" },
+                { "key": "order", "value": "id" }
+              ]
+            },
+            "description": "Read-only for all signed-in users."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Configs by type",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/configs?select=id,name&type=eq.user_type&order=id",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "configs"],
+              "query": [
+                { "key": "select", "value": "id,name" },
+                { "key": "type", "value": "eq.user_type" },
+                { "key": "order", "value": "id" }
+              ]
+            },
+            "description": "One table backs several lookups — always filter by `type`: `user_type`, `event-quest`, `event-day`, `stage-type` (also `maintenance`, `sponsor`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Missions & leaderboard",
+      "description": "`missions` is the read-only catalog. `user_missions` holds your own progress (one row per user + mission). `leaderboard` is a view over completed missions and shows every attendee.\n\n`points_awarded` is written by the client, so totals are only as trustworthy as the app.",
+      "item": [
+        {
+          "name": "Mission catalog",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/missions?select=id,title,description,points&is_active=eq.true&order=id",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "missions"],
+              "query": [
+                { "key": "select", "value": "id,title,description,points" },
+                { "key": "is_active", "value": "eq.true" },
+                { "key": "order", "value": "id" }
+              ]
+            },
+            "description": "The mission catalog, read-only for all signed-in users. Columns: id, title, description, points, is_active.\n\nFilter on `is_active=eq.true` so retired missions don't show up in the app."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My mission progress",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/user_missions?select=*,missions(title,points)&order=created_at.desc",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "user_missions"],
+              "query": [
+                { "key": "select", "value": "*,missions(title,points)" },
+                { "key": "order", "value": "created_at.desc" }
+              ]
+            },
+            "description": "RLS already limits this to your own rows — no `user_id` filter needed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complete a mission (upsert)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/user_missions?on_conflict=user_id,mission_id",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "user_missions"],
+              "query": [{ "key": "on_conflict", "value": "user_id,mission_id" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"mission_id\": {{mission_id}},\n  \"status\": \"completed\",\n  \"points_awarded\": 50,\n  \"completed_at\": \"{{$isoTimestamp}}\"\n}"
+            },
+            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| user_id | uuid | yes | Must equal the signed-in user |\n| mission_id | integer | yes | |\n| status | string | no | `in_progress` (default) or `completed` |\n| points_awarded | integer | no | Defaults to 0 |\n| completed_at | timestamptz | no | |\n\nUnique on (user_id, mission_id), so `Prefer: resolution=merge-duplicates` turns this into an upsert and avoids a 23505 on a second attempt.\n\n`on_conflict=user_id,mission_id` is required with it — without naming the unique constraint PostgREST targets the primary key instead and a repeat completion returns **409**. In supabase-js that is `.upsert(row, { onConflict: 'user_id,mission_id' })`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('documented status', () => pm.expect([200, 201]).to.include(pm.response.code));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/leaderboard?select=*,users(first_name,last_name,profile_image)&order=rank.asc&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "leaderboard"],
+              "query": [
+                { "key": "select", "value": "*,users(first_name,last_name,profile_image)" },
+                { "key": "order", "value": "rank.asc" },
+                { "key": "limit", "value": "50" }
+              ]
+            },
+            "description": "View columns: `user_id`, `total_points`, `rank`. Counts completed missions only, across all attendees."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Agenda",
+      "description": "`agenda` is read-only session data. Guilds attach many-to-many through `agenda_guilds` — the old `agenda.guild_id` column was dropped, don't reference it.\n\n`user_agenda` is the per-user bookmark list: insert and delete only, no update.",
+      "item": [
+        {
+          "name": "Full agenda",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/agenda?select=id,name,description,day,start_time,end_time,location,speaker_name,speaker_title,speaker_company,is_sponsored,status,sort_order,event_quest_config:configs!agenda_event_quest_config_id_fkey(name),agenda_guilds(guilds(name))&order=sort_order",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "agenda"],
+              "query": [
+                { "key": "select", "value": "id,name,description,day,start_time,end_time,location,speaker_name,speaker_title,speaker_company,is_sponsored,status,sort_order,event_quest_config:configs!agenda_event_quest_config_id_fkey(name),agenda_guilds(guilds(name))" },
+                { "key": "order", "value": "sort_order" }
+              ]
+            },
+            "description": "`agenda` has three separate foreign keys to `configs` (quest, day, stage), so a bare `configs(...)` embed is ambiguous — name the constraint as shown.\n\nStores the first row's id in `agenda_id` for the requests below."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "if (Array.isArray(rows) && rows.length) {",
+                  "  pm.collectionVariables.set('agenda_id', rows[0].id);",
+                  "} else {",
+                  "  console.log('Agenda is empty — the add/remove requests below will fail on the foreign key until sessions exist.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Agenda for one day",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/agenda?select=id,name,start_time,end_time,location&event_day_config_id=eq.8&order=sort_order",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "agenda"],
+              "query": [
+                { "key": "select", "value": "id,name,start_time,end_time,location" },
+                { "key": "event_day_config_id", "value": "eq.8" },
+                { "key": "order", "value": "sort_order" }
+              ]
+            },
+            "description": "`event_day_config_id` points at `configs` rows of type `event-day` (ids 8–10 = Day 0/1/2 in the seed data). `day=eq.2026-09-01` filters by calendar date instead."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Agenda by quest type",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/agenda?select=id,name,start_time&event_quest_config_id=eq.4&order=sort_order",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "agenda"],
+              "query": [
+                { "key": "select", "value": "id,name,start_time" },
+                { "key": "event_quest_config_id", "value": "eq.4" },
+                { "key": "order", "value": "sort_order" }
+              ]
+            },
+            "description": "Quest types are `configs` rows of type `event-quest` — 4 Main Quests, 5 Side Quests, 6 Bonus Quests, 7 My Schedule in the seed data."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Agenda by guild",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/agenda_guilds?select=agenda(id,name,start_time,location)&guild_id=eq.{{guild_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "agenda_guilds"],
+              "query": [
+                { "key": "select", "value": "agenda(id,name,start_time,location)" },
+                { "key": "guild_id", "value": "eq.{{guild_id}}" }
+              ]
+            },
+            "description": "Query the join table and embed the session, since the guild filter lives there."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My schedule",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/user_agenda?select=id,day,created_at,agenda(id,name,start_time,end_time,location,speaker_name)&order=day",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "user_agenda"],
+              "query": [
+                { "key": "select", "value": "id,day,created_at,agenda(id,name,start_time,end_time,location,speaker_name)" },
+                { "key": "order", "value": "day" }
+              ]
+            },
+            "description": "RLS limits this to your own bookmarks."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add session to my schedule",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/user_agenda?on_conflict=user_id,agenda_id",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "user_agenda"],
+              "query": [{ "key": "on_conflict", "value": "user_id,agenda_id" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"agenda_id\": \"{{agenda_id}}\"\n}"
+            },
+            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| user_id | uuid | yes | Must equal the signed-in user |\n| agenda_id | uuid | yes | `agenda.id` |\n| day | date | no | Denormalised copy for grouping |\n\nUnique on (user_id, agenda_id), so `Prefer: resolution=merge-duplicates` plus `on_conflict=user_id,agenda_id` makes a repeat tap idempotent. Without the `on_conflict` target PostgREST aims at the primary key and the second tap returns 409.\n\nA 23503 means `agenda_id` doesn't exist — run **Full agenda** first to populate the variable."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('agenda_id')) {",
+                  "  console.log('agenda_id not set (no sessions in the agenda table) — skipping');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('documented status', () => pm.expect([200, 201]).to.include(pm.response.code));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove session from my schedule",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/user_agenda?agenda_id=eq.{{agenda_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "user_agenda"],
+              "query": [{ "key": "agenda_id", "value": "eq.{{agenda_id}}" }]
+            },
+            "description": "Returns 204. Deleting someone else's bookmark silently affects 0 rows."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('agenda_id')) {",
+                  "  console.log('agenda_id not set (no sessions in the agenda table) — skipping');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Chat",
+      "description": "Creating a chat takes three writes, and the first two must NOT ask for the row back.\n\nA chat is only readable once you are a participant, so `Prefer: return=representation` (what supabase-js sends when you chain `.select()`) fails with **42501** on the chat and participant inserts. Generate the chat id on the client instead — the pre-request script here uses Postman's `{{$guid}}`.\n\nMessages cannot be edited or deleted.",
+      "item": [
+        {
+          "name": "1) Create chat",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The client must own the id, because the inserted row is not readable",
+                  "// until a chat_participants row exists for it.",
+                  "pm.collectionVariables.set('chat_id', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('body is empty (return=minimal)', () => pm.expect(pm.response.text()).to.be.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Prefer", "value": "return=minimal" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chats",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "chats"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{chat_id}}\",\n  \"is_group\": false\n}"
+            },
+            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| id | uuid | yes here | Generate client-side (`crypto.randomUUID()`) so you know it without reading the row back |\n| is_group | boolean | no | Defaults to false |\n\n`Prefer: return=minimal` is required — asking for the row returns 42501 because the select policy needs you to be a participant, which isn't true yet. In supabase-js: `.insert({...})` with no `.select()`."
+          }
+        },
+        {
+          "name": "2) Add myself as participant",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Prefer", "value": "return=minimal" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chat_participants",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "chat_participants"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"user_id\": \"{{user_id}}\"\n}"
+            },
+            "description": "Also `return=minimal` — same reason. The policy allows the row when `user_id` is you, or when you are already in the chat."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('201', () => pm.response.to.have.status(201));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3) Add the other person",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Prefer", "value": "return=minimal" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chat_participants",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "chat_participants"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"user_id\": \"{{other_user_id}}\"\n}"
+            },
+            "description": "Set `other_user_id` from the attendee directory first. Allowed because you are already a participant.\n\nSkipped in automated runs when `other_user_id` is empty."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('other_user_id')) {",
+                  "  console.log('other_user_id not set — skipping');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('documented status', () => pm.expect([201, 409]).to.include(pm.response.code));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My chats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chats?select=id,is_group,created_at,chat_participants(user_id,users(first_name,last_name,profile_image)),chat_messages(body,created_at)&order=created_at.desc",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "chats"],
+              "query": [
+                { "key": "select", "value": "id,is_group,created_at,chat_participants(user_id,users(first_name,last_name,profile_image)),chat_messages(body,created_at)" },
+                { "key": "order", "value": "created_at.desc" }
+              ]
+            },
+            "description": "Only chats you participate in are visible. Embeds the other members and the messages for a chat-list preview."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('the new chat is visible', () => {",
+                  "  const ids = pm.response.json().map((c) => c.id);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get('chat_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Prefer", "value": "return=representation" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chat_messages",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "chat_messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"sender_id\": \"{{user_id}}\",\n  \"body\": \"Hello from Postman\"\n}"
+            },
+            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| chat_id | uuid | yes | You must be a participant |\n| sender_id | uuid | yes | Must equal the signed-in user |\n| body | text | yes | |\n\n`return=representation` is fine here — by now you are a participant, so the row is readable."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('201', () => pm.response.to.have.status(201));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Messages in a chat",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chat_messages?select=id,body,created_at,sender:users(id,first_name,last_name,profile_image)&chat_id=eq.{{chat_id}}&order=created_at.asc&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "chat_messages"],
+              "query": [
+                { "key": "select", "value": "id,body,created_at,sender:users(id,first_name,last_name,profile_image)" },
+                { "key": "chat_id", "value": "eq.{{chat_id}}" },
+                { "key": "order", "value": "created_at.asc" },
+                { "key": "limit", "value": "50" }
+              ]
+            },
+            "description": "`sender:users(...)` aliases the embedded sender profile. For live updates subscribe to Realtime INSERTs on `chat_messages` filtered by `chat_id` instead of polling."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('message is there with its sender', () => {",
+                  "  const rows = pm.response.json();",
+                  "  pm.expect(rows).to.be.an('array').that.is.not.empty;",
+                  "  pm.expect(rows[0].sender).to.be.an('object');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Notifications",
+      "description": "Rows are written server-side only — the app can list, mark read and delete, never create.\n\n`type` is one of `chat_message`, `mission`, `agenda`, `announcement`; `data` carries the deep-link target, e.g. `{\"chat_id\": \"...\"}`.\n\n**`read_at` is the only column the app may write.** Patching title/body/data returns 42501 by design, so send `{ read_at }` alone rather than the whole object.",
+      "item": [
+        {
+          "name": "List notifications",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/notifications?select=*&order=created_at.desc&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "notifications"],
+              "query": [
+                { "key": "select", "value": "*" },
+                { "key": "order", "value": "created_at.desc" },
+                { "key": "limit", "value": "20" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Your notifications, newest first (there's an index for exactly this). Stores the first id in `notification_id`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "if (Array.isArray(rows) && rows.length) pm.collectionVariables.set('notification_id', rows[0].id);",
+                  "else console.log('No notifications yet — nothing is inserting them until push delivery is built.');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unread count (badge)",
+          "request": {
+            "method": "HEAD",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Prefer", "value": "count=exact" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/notifications?select=id&read_at=is.null",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "notifications"],
+              "query": [
+                { "key": "select", "value": "id" },
+                { "key": "read_at", "value": "is.null" }
+              ]
+            },
+            "description": "HEAD + `Prefer: count=exact` returns the count in the `Content-Range` header (`0-0/1`) without transferring rows. In supabase-js: `.select('id', { count: 'exact', head: true }).is('read_at', null)`.\n\nBacked by a partial index on unread rows."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('count in Content-Range', () => pm.expect(pm.response.headers.get('content-range')).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark one read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Prefer", "value": "return=representation" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/notifications?id=eq.{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "notifications"],
+              "query": [{ "key": "id", "value": "eq.{{notification_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"read_at\": \"{{$isoTimestamp}}\"\n}"
+            },
+            "description": "Send `read_at` only. Adding `title`, `body` or `data` to this body returns **42501 permission denied for table notifications** — column-level grants stop a user rewriting a notification they were sent."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('notification_id')) {",
+                  "  console.log('notification_id not set — skipping');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Prefer", "value": "return=minimal" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/notifications?read_at=is.null",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "notifications"],
+              "query": [{ "key": "read_at", "value": "is.null" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"read_at\": \"{{$isoTimestamp}}\"\n}"
+            },
+            "description": "The `read_at=is.null` filter is the whole mark-all-read operation; RLS keeps it to your own rows. Returns 204."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete a notification",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/notifications?id=eq.{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["rest", "v1", "notifications"],
+              "query": [{ "key": "id", "value": "eq.{{notification_id}}" }]
+            },
+            "description": "Returns 204. Deleting a notification that isn't yours silently affects 0 rows."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('notification_id')) {",
+                  "  console.log('notification_id not set — skipping');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
