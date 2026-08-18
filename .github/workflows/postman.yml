@@ -1,17 +1,28 @@
 name: API Tests
 
+# Runs the Postman collection against the staging project.
+#
+# Deliberately not pointed at production: a full collection run writes real rows
+# (a chat, a message, mission progress) into whichever project it targets.
+# See postman/ENVIRONMENTS.md.
+
 on:
   push:
     branches:
-      - main
-
+      - staging
   pull_request:
     branches:
       - main
+      - staging
+  workflow_dispatch:
 
 jobs:
   postman-tests:
     runs-on: ubuntu-latest
+
+    # Secrets come from this environment, so the tests can never reach the
+    # production project by accident.
+    environment: staging
 
     steps:
       - name: Checkout repository
@@ -26,8 +37,19 @@ jobs:
         run: npm install -g newman
 
       - name: Run Postman collection
-        run: newman run \
-          postman/FinTechNerdCon.postman_collection.json \
-          -e postman/FinTechNerdCon.postman_environment.json \
-          --env-var "base_url=${{ secrets.SUPABASE_URL }}" \
-          --env-var "supabase_anon_key=${{ secrets.SUPABASE_ANON_KEY }}"
+        env:
+          # SUPABASE_URL is the project URL, e.g. https://<ref>.supabase.co
+          BASE_URL: ${{ secrets.SUPABASE_URL }}
+          ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # An address that exists in public.email_stack on staging, plus the
+          # password of the account registered to it. Without these, Login is
+          # skipped and every authenticated request fails.
+          TEST_EMAIL: ${{ secrets.POSTMAN_TEST_EMAIL }}
+          TEST_PASSWORD: ${{ secrets.POSTMAN_TEST_PASSWORD }}
+        run: |
+          newman run postman/FinTechNerdCon.postman_collection.json \
+            -e postman/FinTechNerdCon.postman_environment.staging.json \
+            --env-var "base_url=$BASE_URL" \
+            --env-var "anon_key=$ANON_KEY" \
+            --env-var "test_email=$TEST_EMAIL" \
+            --env-var "test_password=$TEST_PASSWORD"

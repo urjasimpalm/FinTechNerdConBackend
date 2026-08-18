@@ -31,3 +31,13 @@ insert into public.missions (id, title, description, points) overriding system v
   (2, 'Add a session to your schedule', 'Check in to a Main Quest or Side Quest Stage session and level up your knowledge.', 50),
   (3, 'Visit an Activation', 'Explore a sponsor activation in the Activation Hall.', 50),
   (4, 'Connect with a New Nerd', 'Make a new connection through the event app with a fellow attendee.', 50);
+
+-- guilds and missions were inserted with `overriding system value`, which does
+-- not advance their identity sequences: both were left unused while ids 1..5 and
+-- 1..4 are taken. The next insert that lets the database pick an id (adding a
+-- guild in Studio, say) would ask for id 1 and fail on the primary key. Move each
+-- sequence past the rows just inserted. configs uses the sequence normally, so it
+-- is already correct — set it too, so this stays right if that ever changes.
+select setval(pg_get_serial_sequence('public.guilds', 'id'), coalesce((select max(id) from public.guilds), 1));
+select setval(pg_get_serial_sequence('public.missions', 'id'), coalesce((select max(id) from public.missions), 1));
+select setval(pg_get_serial_sequence('public.configs', 'id'), coalesce((select max(id) from public.configs), 1));

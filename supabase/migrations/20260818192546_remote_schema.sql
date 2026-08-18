@@ -1,0 +1,23 @@
+-- Intentionally a no-op.
+--
+-- `supabase db pull` generated this file containing a single statement:
+--
+--     drop function if exists "public"."verify_email"(p_email text);
+--
+-- That was the pull describing the remote as it stood — the remote had lost
+-- public.verify_email, so the diff "to match remote" was to drop it locally. It
+-- is not a change anyone wanted: without the function, verify-email and register
+-- fail with a 500 because their RPC call errors.
+--
+-- The statement was removed rather than the whole file, because this version is
+-- already recorded in the remote migration history; deleting the file makes
+-- `supabase db push` refuse to run ("Remote migration versions not found in local
+-- migrations directory"). Keeping it as a no-op keeps the histories aligned and
+-- stops a fresh project from creating the function at 20260814214202 and dropping
+-- it again here.
+--
+-- The function is recreated in 20260819010013_verify_email_function.sql.
+--
+-- If a future `db pull` reintroduces a drop of a function the app relies on, that
+-- means the remote genuinely lost it: recreate it in a new migration rather than
+-- letting the drop through.
