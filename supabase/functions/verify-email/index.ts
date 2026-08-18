@@ -9,25 +9,12 @@
 // on the service role because public.email_stack has RLS enabled with no
 // policies, so the list itself stays unreadable; only the yes/no answer is
 // exposed.
-import { corsHeaders } from "../_shared/cors.ts";
-import { json, readJson, text } from "../_shared/http.ts";
+import { fail, guardPostEnvelope, ok, readJson, text } from "../_shared/http.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
-// { status, message, data } on every path, so the client can read the same three
-// keys whether the call succeeded or not.
-function ok(message: string, data: unknown): Response {
-  return json({ status: "Success", message, data });
-}
-
-function fail(message: string, httpStatus: number): Response {
-  return json({ status: "Error", message, data: null }, httpStatus);
-}
-
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-  if (req.method !== "POST") return fail("Method not allowed.", 405);
+  const blocked = guardPostEnvelope(req);
+  if (blocked) return blocked;
 
   const body = await readJson(req);
   if (!body) return fail("A JSON body is required.", 400);

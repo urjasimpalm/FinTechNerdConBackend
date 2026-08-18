@@ -25,11 +25,32 @@ additional_redirect_urls = []
 jwt_expiry = 3600
 enable_signup = true
 
+# auth/reset-password takes the 6-digit code from this email. The stock template
+# only contains the {{ .ConfirmationURL }} deep link, which the code-based flow
+# can't use, so the recovery mail is overridden to include {{ .Token }}.
+# Remember the hosted project has its own copy: Authentication → Emails →
+# Reset Password must include {{ .Token }} there too, or the deployed
+# reset-password will only work with `token_hash` from the link.
+[auth.email.template.recovery]
+subject = "Reset your FinTechNerdCon password"
+content_path = "./supabase/templates/recovery.html"
+
 [storage]
 enabled = true
 
 [analytics]
 enabled = false
+
+# Per-project overrides for `supabase config push`. Uncomment and fill in the
+# project refs before using it — pushing the settings above as-is would repoint a
+# hosted project's auth redirects at localhost. See postman/ENVIRONMENTS.md.
+#
+# [remotes.staging]
+# project_id = "your-staging-project-ref"
+#
+# [remotes.staging.auth]
+# site_url = "https://staging.yourdomain.com"
+# additional_redirect_urls = ["https://staging.yourdomain.com/**"]
 
 # auth/login, auth/register, auth/verify-email and config are reached before the
 # caller has a session, so they must not require a JWT. They still need the
@@ -41,6 +62,14 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.verify-email]
+verify_jwt = false
+
+# Password reset: the caller has no session by definition — owning the emailed
+# code is what authorises the change.
+[functions.forgot-password]
+verify_jwt = false
+
+[functions.reset-password]
 verify_jwt = false
 
 [functions.config]

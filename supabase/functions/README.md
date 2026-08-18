@@ -1,13 +1,15 @@
 # Edge functions
 
-Four functions. For the whole API surface the app talks to — profile, agenda,
-chat, missions, notifications — see [../../docs/API.md](../../docs/API.md).
+Six functions. For the whole API surface the app talks to — profile, agenda,
+chat, missions, notifications — see [../../postman/API.md](../../postman/API.md).
 
 | What | Call | Auth needed |
 | --- | --- | --- |
 | Is this email on the attendee list? | `POST /functions/v1/verify-email` | anon key |
 | Register | `POST /functions/v1/register` | anon key |
 | Login | `POST /functions/v1/login` | anon key |
+| Email a password reset code | `POST /functions/v1/forgot-password` | anon key |
+| Set a new password with that code | `POST /functions/v1/reset-password` | anon key |
 | Lookup lists (guilds, user types, days, stages) | `GET /functions/v1/config` | anon key |
 
 Base URL:
@@ -17,7 +19,7 @@ Base URL:
 
 All of them are public (no user session yet), but every request still needs the
 project's anon/publishable key in the `apikey` header. `supabase-js` adds it for
-you. `config` is documented in full in [../../docs/API.md](../../docs/API.md#5-config--reference-data).
+you. `config` is documented in full in [../../postman/API.md](../../postman/API.md#5-config--reference-data).
 
 ---
 
@@ -91,6 +93,41 @@ POST /functions/v1/login
 
 Wrong password and unknown email both return the same 401 on purpose, so the
 endpoint can't be used to find out which emails have accounts.
+
+## 4. Forgot password → 5. Reset password
+
+Two steps, both using the `{ status, message, data }` envelope.
+
+```
+POST /functions/v1/forgot-password
+{ "email": "wasim@simpalm.com" }
+→ { "status": "Success",
+    "message": "If that email has an account, a reset code is on its way.",
+    "data": { "email_sent": true } }
+```
+
+An unknown email gets the same 200 — otherwise this would leak which addresses
+have accounts. 429 means the per-address email throttle kicked in; its message
+names the wait.
+
+```
+POST /functions/v1/reset-password
+{ "email": "wasim@simpalm.com", "token": "923615", "password": "NewPassw0rd!" }
+→ { "status": "Success", "message": "Your password has been reset.",
+    "data": { token, token_type, expires_in, expires_at, refresh_token, user } }
+```
+
+`token` is the 6-digit code from the email; alternatively send `token_hash` on
+its own (the `token` query param from the emailed link, for the web flow). Codes
+are single-use, and wrong/used/expired all return the same
+`This reset code is invalid or has expired.` 400.
+
+`data` matches login's, so the app can drop straight into the logged-in state.
+
+The code comes from the recovery email template, which needs `{{ .Token }}` in
+it — set for local dev via [`config.toml`](../config.toml) and
+[`templates/recovery.html`](../templates/recovery.html), and separately on the
+hosted project under Authentication → Emails → Reset Password.
 
 ---
 

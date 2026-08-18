@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FinTechNerdCon Backend",
-    "description": "Front-end API collection for the FinTechNerdCon Supabase backend.\n\nMirrors docs/API.md. Two kinds of endpoint:\n\n- `/functions/v1/...` edge functions (verify-email, register, login, config) — public, anon key only\n- `/rest/v1/...` auto-generated REST over the tables, guarded by row-level security — needs the access token from login\n\n## Setup\n\n1. Import the environment file next to this collection (`FinTechNerdCon.postman_environment.json`) and select it.\n2. For a deployed project set `base_url` to `https://<project-ref>.supabase.co` and `anon_key` to the project's anon/publishable key.\n3. Run **1. Auth → Login**. Its test script stores `access_token`, `refresh_token` and `user_id` as collection variables, so every later request is authenticated automatically.\n\nThe collection sends `Authorization: Bearer {{access_token}}` by default; the public endpoints override this with no auth.\n\nAssertions accept every status the API documents for a request (e.g. Register passes on 201, 403 and 409), so a full collection run stays green whether or not the test email is on the attendee list.",
+    "description": "Front-end API collection for the FinTechNerdCon Supabase backend.\n\nMirrors postman/API.md. Two kinds of endpoint:\n\n- `/functions/v1/...` edge functions (verify-email, register, login, forgot-password, reset-password, config) — public, anon key only\n- `/rest/v1/...` auto-generated REST over the tables, guarded by row-level security — needs the access token from login\n\n## Setup\n\n1. Import the environment file next to this collection (`FinTechNerdCon.postman_environment.json`) and select it.\n2. For a deployed project set `base_url` to `https://<project-ref>.supabase.co` and `anon_key` to the project's anon/publishable key.\n3. Run **1. Auth → Login**. Its test script stores `access_token`, `refresh_token` and `user_id` as collection variables, so every later request is authenticated automatically.\n\nThe collection sends `Authorization: Bearer {{access_token}}` by default; the public endpoints override this with no auth.\n\nAssertions accept every status the API documents for a request (e.g. Register passes on 201, 403 and 409), so a full collection run stays green whether or not the test email is on the attendee list.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -23,7 +23,9 @@
     { "key": "guild_id", "value": "1", "type": "string" },
     { "key": "mission_id", "value": "1", "type": "string" },
     { "key": "user_type_config_id", "value": "1", "type": "string" },
-    { "key": "allow_destructive", "value": "false", "type": "string" }
+    { "key": "allow_destructive", "value": "false", "type": "string" },
+    { "key": "reset_code", "value": "", "type": "string" },
+    { "key": "new_password", "value": "NewPassw0rd!23", "type": "string" }
   ],
   "item": [
     {
@@ -64,7 +66,7 @@
                   "  pm.expect(body.data.email_exist).to.be.a('boolean');",
                   "});",
                   "if (!pm.response.json().data.email_exist) {",
-                  "  console.log(pm.collectionVariables.get('test_email') + ' is not on the attendee list — Register will return 403.');",
+                  "  console.log(pm.variables.get('test_email') + ' is not on the attendee list — Register will return 403.');",
                   "}"
                 ]
               }
@@ -147,9 +149,109 @@
                   "  pm.collectionVariables.set('access_token', body.data.token);",
                   "  pm.collectionVariables.set('refresh_token', body.data.refresh_token);",
                   "  pm.collectionVariables.set('user_id', body.data.user.id);",
-                  "  pm.test('token stored', () => pm.expect(pm.collectionVariables.get('access_token')).to.be.a('string').and.not.empty);",
+                  "  pm.test('token stored', () => pm.expect(pm.variables.get('access_token')).to.be.a('string').and.not.empty);",
                   "} else {",
                   "  console.log('Login failed:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/forgot-password",
+              "host": ["{{base_url}}"],
+              "path": ["functions", "v1", "forgot-password"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\"\n}"
+            },
+            "description": "Step 1 of the password reset — emails a 6-digit code.\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | yes | Case-insensitive, trimmed |\n| redirect_to | string | no | Only for the web/link variant |\n\n- **200** `{ status: \"Success\", message, data: { email_sent: true } }`\n- **400** `Error` — email missing or malformed\n- **429** `Error` — per-address email throttle; the message names the wait\n\n**An unknown email also returns 200.** Deliberate: any other response would let someone discover which addresses have accounts. So the UI should say \"check your email\" and must not branch on whether the account exists.\n\nLocally the mail lands in Mailpit: http://127.0.0.1:54324 — copy the 6-digit code into the `reset_code` variable, then send **Reset password**.\n\nNote each new request invalidates the previous code, so a whole-folder run can't finish the reset in one pass: this request re-issues the code before Reset password runs. Send the two by hand, in order."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 429]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('Success envelope', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.email_sent).to.be.true;",
+                  "  });",
+                  "  console.log('Check Mailpit (http://127.0.0.1:54324) for the code, then set the reset_code variable.');",
+                  "} else {",
+                  "  console.log('forgot-password:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["functions", "v1", "reset-password"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"token\": \"{{reset_code}}\",\n  \"password\": \"{{new_password}}\"\n}"
+            },
+            "description": "Step 2 — exchanges the code for a new password. Owning the code is the authorisation, so no session is needed.\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | with `token` | Address the code was sent to |\n| token | string | yes* | The 6-digit code from the email |\n| token_hash | string | yes* | Instead of email+token: the `token` query param from the emailed link (web flow) |\n| password | string | yes | New password, min 8 characters |\n\n\\* Send either `email` + `token`, or `token_hash` alone.\n\n- **200** `{ status: \"Success\", message, data: { token, token_type, expires_in, expires_at, refresh_token, user } }` — `data` matches Login's, and the test script stores the session\n- **400** `Error` — invalid/expired/used code, password under 8 chars, missing fields, or \"New password should be different from the old password.\"\n- **405** `Error` — must be POST\n\nCodes are single-use; wrong, used and expired all share one message on purpose. Requesting a new code invalidates the previous one, so use the newest email.\n\nSkipped unless `reset_code` is set — fill it in from the email that **Forgot password** triggers, then send this request on its own (a folder run would re-issue the code first and invalidate it).\n\n**This changes the account's password.** Afterwards `test_password` is stale — set it to `new_password` (or reset it back), otherwise Login will start failing.\n\nGuards and chained values are read with `pm.variables.get`, so `reset_code` works whether you set it as a collection variable, an environment variable, or with `newman --env-var`."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('reset_code')) {",
+                  "  console.log('reset_code not set — skipping. Run Forgot password, take the code from the email, set reset_code, then send this.');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('access_token', body.data.token);",
+                  "  pm.collectionVariables.set('refresh_token', body.data.refresh_token);",
+                  "  pm.collectionVariables.set('user_id', body.data.user.id);",
+                  "  pm.collectionVariables.unset('reset_code');",
+                  "  pm.test('Success with a session', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.token).to.be.a('string');",
+                  "  });",
+                  "  console.log('Password changed to new_password. Update test_password to match, or Login will now fail. reset_code cleared — codes are single-use.');",
+                  "} else {",
+                  "  console.log('reset-password:', pm.response.code, body.message);",
                   "}"
                 ]
               }
@@ -215,7 +317,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.collectionVariables.get('allow_destructive') !== 'true') {",
+                  "if (pm.variables.get('allow_destructive') !== 'true') {",
                   "  console.log('Skipping Logout — set allow_destructive to true to run it.');",
                   "  pm.execution.skipRequest();",
                   "}"
@@ -408,7 +510,7 @@
                   "pm.test('one row for me', () => {",
                   "  const rows = pm.response.json();",
                   "  pm.expect(rows).to.be.an('array').with.lengthOf(1);",
-                  "  pm.expect(rows[0].id).to.eql(pm.collectionVariables.get('user_id'));",
+                  "  pm.expect(rows[0].id).to.eql(pm.variables.get('user_id'));",
                   "});"
                 ]
               }
@@ -550,7 +652,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.collectionVariables.get('allow_destructive') !== 'true') {",
+                  "if (pm.variables.get('allow_destructive') !== 'true') {",
                   "  console.log('Skipping account deletion — set allow_destructive to true to run it.');",
                   "  pm.execution.skipRequest();",
                   "}"
@@ -915,7 +1017,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.collectionVariables.get('agenda_id')) {",
+                  "if (!pm.variables.get('agenda_id')) {",
                   "  console.log('agenda_id not set (no sessions in the agenda table) — skipping');",
                   "  pm.execution.skipRequest();",
                   "}"
@@ -950,7 +1052,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.collectionVariables.get('agenda_id')) {",
+                  "if (!pm.variables.get('agenda_id')) {",
                   "  console.log('agenda_id not set (no sessions in the agenda table) — skipping');",
                   "  pm.execution.skipRequest();",
                   "}"
@@ -1072,7 +1174,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.collectionVariables.get('other_user_id')) {",
+                  "if (!pm.variables.get('other_user_id')) {",
                   "  console.log('other_user_id not set — skipping');",
                   "  pm.execution.skipRequest();",
                   "}"
@@ -1113,7 +1215,7 @@
                   "pm.test('200', () => pm.response.to.have.status(200));",
                   "pm.test('the new chat is visible', () => {",
                   "  const ids = pm.response.json().map((c) => c.id);",
-                  "  pm.expect(ids).to.include(pm.collectionVariables.get('chat_id'));",
+                  "  pm.expect(ids).to.include(pm.variables.get('chat_id'));",
                   "});"
                 ]
               }
@@ -1283,7 +1385,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.collectionVariables.get('notification_id')) {",
+                  "if (!pm.variables.get('notification_id')) {",
                   "  console.log('notification_id not set — skipping');",
                   "  pm.execution.skipRequest();",
                   "}"
@@ -1349,7 +1451,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.collectionVariables.get('notification_id')) {",
+                  "if (!pm.variables.get('notification_id')) {",
                   "  console.log('notification_id not set — skipping');",
                   "  pm.execution.skipRequest();",
                   "}"

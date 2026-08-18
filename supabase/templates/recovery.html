@@ -1,0 +1,22 @@
+<!--
+  Password reset email.
+
+  {{ .Token }} is the 6-digit code the app asks for on its reset screen — the
+  default Supabase template only includes {{ .ConfirmationURL }}, which is a
+  deep link and awkward on mobile, so the code comes first here. The link is kept
+  underneath for anyone opening the email on the web.
+-->
+<h2>Reset your password</h2>
+
+<p>Enter this code in the app to choose a new password:</p>
+
+<p style="font-size: 28px; font-weight: bold; letter-spacing: 6px;">{{ .Token }}</p>
+
+<p>The code expires in one hour and can only be used once.</p>
+
+<p>
+  On a computer? <a href="{{ .ConfirmationURL }}">Reset your password in the browser</a>
+  instead.
+</p>
+
+<p>If you didn't ask to reset your password, you can ignore this email.</p>

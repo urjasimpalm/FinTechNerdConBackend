@@ -19,6 +19,27 @@ export function guardPost(req: Request): Response | null {
   return null;
 }
 
+// { status, message, data } envelope — the same three keys on every path, so the
+// client can read them without checking whether the call worked first. Used by
+// verify-email, forgot-password and reset-password. (login, register and config
+// still use the older { success, message, data } shape.)
+export function ok(message: string, data: unknown = null): Response {
+  return json({ status: "Success", message, data });
+}
+
+export function fail(message: string, httpStatus: number): Response {
+  return json({ status: "Error", message, data: null }, httpStatus);
+}
+
+// Same as guardPost, in the { status, message, data } envelope.
+export function guardPostEnvelope(req: Request): Response | null {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+  if (req.method !== "POST") return fail("Method not allowed.", 405);
+  return null;
+}
+
 export async function readJson(req: Request): Promise<Record<string, unknown> | null> {
   try {
     const body = await req.json();

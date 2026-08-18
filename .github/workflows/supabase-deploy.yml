@@ -1,16 +1,46 @@
 name: Deploy Supabase
 
+# staging branch  → staging project
+# main branch     → production project
+# manual dispatch → whichever you pick
+#
+# Which project each run targets comes from the GitHub Environment selected
+# below, so staging and production never share a project ref or access token.
+# See postman/ENVIRONMENTS.md for the one-time setup.
+
 on:
   push:
     branches:
       - main
+      - staging
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which Supabase project to deploy to
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+# Two deploys to the same project at once would race on the migration history.
+concurrency:
+  group: supabase-deploy-${{ github.event.inputs.target || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    # Secrets resolve from this environment. Repo-level secrets of the same name
+    # still apply as a fallback, so production keeps working before its secrets
+    # are moved into the environment.
+    environment: ${{ github.event.inputs.target || (github.ref_name == 'main' && 'production' || 'staging') }}
+
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      # Needed by `db push`; set it as an environment secret per project.
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
 
     steps:
@@ -22,10 +52,18 @@ jobs:
         with:
           version: latest
 
+      - name: Check the target project is configured
+        run: |
+          if [ -z "$PROJECT_REF" ]; then
+            echo "SUPABASE_PROJECT_REF is not set for this environment." >&2
+            echo "Add it under Settings → Environments → this environment → Secrets." >&2
+            exit 1
+          fi
+          echo "Deploying to project $PROJECT_REF"
+
       - name: Link Supabase project
         run: |
-          supabase link \
-            --project-ref $PROJECT_REF
+          supabase link --project-ref "$PROJECT_REF"
 
       - name: Deploy database migrations
         run: |
@@ -33,5 +71,6 @@ jobs:
 
       - name: Deploy edge functions
         run: |
-          supabase functions deploy login register verify-email config \
-            --project-ref $PROJECT_REF
+          supabase functions deploy \
+            login register verify-email forgot-password reset-password config \
+            --project-ref "$PROJECT_REF"

@@ -182,7 +182,95 @@ POST /functions/v1/login
 both return the same 401 on purpose, so no one can probe which emails have
 accounts — don't try to distinguish them in the UI.
 
-### 2.4 Reading errors from `functions.invoke`
+### 2.4 Forgot password
+
+Step 1 of the reset: emails a 6-digit code. Uses the `{ status, message, data }`
+envelope.
+
+```
+POST /functions/v1/forgot-password
+```
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `email` | string | yes | Case-insensitive, trimmed |
+| `redirect_to` | string | no | Only for the web/link variant — where the emailed link should land |
+
+| Status | Body |
+| --- | --- |
+| 200 | `{ "status": "Success", "message": "If that email has an account, a reset code is on its way.", "data": { "email_sent": true } }` |
+| 400 | `{ "status": "Error", "message": "Please enter a valid email address.", "data": null }` |
+| 429 | `{ "status": "Error", "message": "For security purposes, you can only request this after N seconds.", "data": null }` |
+| 500 | `{ "status": "Error", "message": "Something went wrong. Please try again.", "data": null }` |
+
+**An unknown email also returns 200.** That's deliberate: a different response
+would turn this into a way to discover which addresses have accounts. So the UI
+should say "check your email" without claiming an email was definitely sent, and
+must not branch on whether the account exists.
+
+### 2.5 Reset password
+
+Step 2: exchanges the code for a new password. Owning the code is what authorises
+the change, so no session is needed. Returns a session on success, so the app can
+go straight into the logged-in state.
+
+```
+POST /functions/v1/reset-password
+```
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `email` | string | with `token` | The address the code was sent to |
+| `token` | string | yes\* | The 6-digit code from the email |
+| `token_hash` | string | yes\* | Alternative to `email` + `token`: the `token` query param from the emailed link (web flow) |
+| `password` | string | yes | The new password, min 8 characters |
+
+\* Send either `email` + `token`, or `token_hash` on its own.
+
+| Status | Body |
+| --- | --- |
+| 200 | `{ "status": "Success", "message": "Your password has been reset.", "data": { token, token_type, expires_in, expires_at, refresh_token, user } }` |
+| 400 | `{ "status": "Error", "message": "This reset code is invalid or has expired.", "data": null }` |
+| 400 | `{ "status": "Error", "message": "Password must be at least 8 characters.", "data": null }` |
+| 400 | `{ "status": "Error", "message": "Email and the reset code are required.", "data": null }` |
+| 400 | `{ "status": "Error", "message": "New password should be different from the old password.", "data": null }` — passed through from auth |
+| 405 | `{ "status": "Error", "message": "Method not allowed.", "data": null }` |
+
+`data` matches login's, so the client can reuse the same session-handling path.
+The code is single-use: a second attempt with the same one returns the
+invalid-or-expired 400. Wrong, used and expired codes share one message on
+purpose.
+
+**Requesting a new code invalidates the previous one.** If the user taps "resend"
+they must use the newest email — so don't keep a code the app captured earlier,
+and expect the invalid-or-expired 400 when someone works from an older message.
+
+```ts
+// step 1
+await supabase.functions.invoke("forgot-password", { body: { email } });
+
+// step 2 — after the user types the code from the email
+const { data: res } = await supabase.functions.invoke("reset-password", {
+  body: { email, token: code, password: newPassword },
+});
+await supabase.auth.setSession({
+  access_token: res.data.token,
+  refresh_token: res.data.refresh_token,
+});
+```
+
+The 6-digit code comes from the recovery email template, which must include
+`{{ .Token }}`. That's configured for local dev in
+[supabase/config.toml](../supabase/config.toml) →
+[supabase/templates/recovery.html](../supabase/templates/recovery.html). **On the
+hosted project it has to be set separately** under Authentication → Emails →
+Reset Password, otherwise the deployed endpoint only works with `token_hash`.
+
+Also worth knowing before launch: hosted projects rate limit the built-in email
+sender hard (a couple of messages per hour), so real password resets need custom
+SMTP configured.
+
+### 2.6 Reading errors from `functions.invoke`
 
 `invoke()` collapses every non-2xx into `error` and does not parse the body. The
 403/409 cases above carry meaning, so unwrap them:
@@ -200,7 +288,7 @@ async function callFn(name: string, body: unknown) {
 }
 ```
 
-### 2.5 Holding the session
+### 2.7 Holding the session
 
 After register/login, hand the tokens to the SDK, or every later request runs as
 anonymous and RLS returns empty results:
@@ -556,7 +644,7 @@ These have no endpoint. The ones marked *SDK* need no backend work — call
 | --- | --- |
 | Logout | *SDK* — `supabase.auth.signOut()` |
 | Refresh token | *SDK* — `supabase.auth.refreshSession()` |
-| Forgot / reset password | *SDK* — `resetPasswordForEmail()` then `updateUser({ password })`; needs the email templates and redirect URL configured |
+| Forgot / reset password | Built — see [§2.4](#24-forgot-password) and [§2.5](#25-reset-password). Still needs the recovery template set on the hosted project, and custom SMTP for real volume |
 | Verify email | Not wired up — `register` auto-confirms accounts, since the email was already vetted against the attendee list |
 | Delete account | Partly — `DELETE /rest/v1/users?id=eq.<my-id>` removes the profile, but the `auth.users` row survives, so the email cannot be re-registered. Needs an edge function to do both |
 | Profile image upload | No storage bucket yet; `users.profile_image` is just a URL |
