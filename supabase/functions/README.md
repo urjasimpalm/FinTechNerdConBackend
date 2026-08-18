@@ -1,6 +1,6 @@
 # Edge functions
 
-Six functions. For the whole API surface the app talks to — profile, agenda,
+Seven functions. For the whole API surface the app talks to — profile, agenda,
 chat, missions, notifications — see [../../postman/API.md](../../postman/API.md).
 
 | What | Call | Auth needed |
@@ -11,15 +11,22 @@ chat, missions, notifications — see [../../postman/API.md](../../postman/API.m
 | Email a password reset code | `POST /functions/v1/forgot-password` | anon key |
 | Set a new password with that code | `POST /functions/v1/reset-password` | anon key |
 | Lookup lists (guilds, user types, days, stages) | `GET /functions/v1/config` | anon key |
+| Add / remove attendee-list emails | `POST` / `DELETE /functions/v1/email-stack` | **admin** user token |
 
 Base URL:
 
 - local: `http://127.0.0.1:54321`
 - deployed: `https://<project-ref>.supabase.co`
 
-All of them are public (no user session yet), but every request still needs the
+The first six are public (no user session yet), but every request still needs the
 project's anon/publishable key in the `apikey` header. `supabase-js` adds it for
-you. `config` is documented in full in [../../postman/API.md](../../postman/API.md#5-config--reference-data).
+you. `config` is documented in full in [../../postman/API.md](../../postman/API.md#5-config--reference-data),
+and `email-stack` in [§10](../../postman/API.md#10-admin-attendee-list).
+
+`email-stack` is the exception: it needs a real user's access token and checks
+`public.users.is_admin`. `verify_jwt` alone would not gate it, because the anon
+key is itself a valid JWT — the `is_admin` lookup in `_shared/admin.ts` is what
+does.
 
 ---
 

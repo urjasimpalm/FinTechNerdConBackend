@@ -635,7 +635,102 @@ back in an update; send `{ read_at }` alone.
 
 ---
 
-## 10. Not built yet
+## 10. Admin: attendee list
+
+Managing `public.email_stack` — the invite list that registration is gated on.
+**Admin only:** the caller needs a signed-in session whose `public.users` row has
+`is_admin = true`.
+
+```
+POST   /functions/v1/email-stack     add
+DELETE /functions/v1/email-stack     remove
+```
+
+Send the access token from login as `Authorization: Bearer <token>`, as with any
+authenticated request.
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `email` | string | one of the two | A single address |
+| `emails` | array | one of the two | Up to 200 per request. Items may be plain strings, or `{ email, first_name?, last_name? }` |
+| `first_name` | string | no | Only with the single-`email` form |
+| `last_name` | string | no | Only with the single-`email` form |
+
+Addresses are trimmed and lower-cased, and matching ignores case throughout — so
+`NINA@Example.com` adds `nina@example.com`, and removing `TWO@Example.com`
+removes `two@example.com`.
+
+**Add — 200**
+
+```json
+{
+  "status": "Success",
+  "message": "Added 1 email to the attendee list.",
+  "data": {
+    "requested": 2,
+    "added_count": 1,
+    "added": ["four@example.com"],
+    "already_on_list": ["one@example.com"]
+  }
+}
+```
+
+**Remove — 200**
+
+```json
+{
+  "status": "Success",
+  "message": "Removed 1 email from the attendee list.",
+  "data": {
+    "requested": 2,
+    "removed_count": 1,
+    "removed": ["one@example.com"],
+    "not_found": ["nope@example.com"]
+  }
+}
+```
+
+Both are idempotent: adding an address already on the list reports it under
+`already_on_list`, removing one that isn't there reports it under `not_found`.
+Neither is an error, so the UI can replay a request safely.
+
+| Status | Body |
+| --- | --- |
+| 200 | as above |
+| 400 | `{ "status": "Error", "message": "\"not-an-email\" is not a valid email address.", "data": null }` — one bad address rejects the whole request, and nothing is written |
+| 400 | `Provide "email" or a non-empty "emails" list.` / `At most 200 emails per request.` |
+| 401 | `A user access token is required.` — no bearer token, or the anon key was sent instead of a user's |
+| 403 | `Admin access is required.` — signed in, but `is_admin` is false |
+| 405 | `Method not allowed. Use POST to add or DELETE to remove.` |
+
+Two things to know:
+
+- **Removing an address does not touch an account that already registered with
+  it.** It only stops future registrations. Deleting the account is a separate
+  concern (see [§10 Not built yet](#11-not-built-yet)).
+- **`is_admin` cannot be set through the API** — not even by an admin. It is
+  writable only by the service role (Studio or SQL), so an admin cannot promote
+  another user through this API. Deliberate; see the column grants in
+  `20260818221724_users_is_admin.sql`.
+
+```ts
+// add
+const { data: res } = await supabase.functions.invoke("email-stack", {
+  body: { emails: ["nina@example.com", { email: "sam@example.com", first_name: "Sam" }] },
+});
+
+// remove — invoke() needs the method spelled out
+const { data: gone } = await supabase.functions.invoke("email-stack", {
+  method: "DELETE",
+  body: { email: "nina@example.com" },
+});
+```
+
+There is no list endpoint yet: `email_stack` has RLS enabled with no policies, so
+an admin screen cannot read the list directly either. Worth adding a `GET` to
+this same function when that screen gets built.
+
+## 11. Not built yet
 
 These have no endpoint. The ones marked *SDK* need no backend work — call
 `supabase.auth` directly:

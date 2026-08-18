@@ -25,7 +25,9 @@
     { "key": "user_type_config_id", "value": "1", "type": "string" },
     { "key": "allow_destructive", "value": "false", "type": "string" },
     { "key": "reset_code", "value": "", "type": "string" },
-    { "key": "new_password", "value": "NewPassw0rd!23", "type": "string" }
+    { "key": "new_password", "value": "NewPassw0rd!23", "type": "string" },
+    { "key": "stack_email", "value": "postman-invited@example.com", "type": "string" },
+    { "key": "stack_email_2", "value": "postman-invited-2@example.com", "type": "string" }
   ],
   "item": [
     {
@@ -1463,6 +1465,117 @@
               "script": {
                 "type": "text/javascript",
                 "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Admin: attendee list",
+      "description": "Managing public.email_stack, the invite list registration is gated on.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth → Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nBoth requests are idempotent — adding an address already present reports it under `already_on_list`, removing an absent one reports it under `not_found`, and neither is an error.",
+      "item": [
+        {
+          "name": "Add emails to attendee list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/email-stack",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "email-stack"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emails\": [\n    \"{{stack_email}}\",\n    { \"email\": \"{{stack_email_2}}\", \"first_name\": \"Sam\", \"last_name\": \"Ray\" }\n  ]\n}"
+            },
+            "description": "| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | one of the two | A single address |\n| emails | array | one of the two | Up to 200. Items may be strings or `{ email, first_name?, last_name? }` |\n| first_name | string | no | Only with the single-`email` form |\n| last_name | string | no | Only with the single-`email` form |\n\nAddresses are trimmed and lower-cased; matching ignores case, so `NINA@Example.com` and `nina@example.com` are the same entry.\n\n- **200** `data: { requested, added_count, added[], already_on_list[] }`\n- **400** one invalid address rejects the whole request and nothing is written; also `Provide \"email\" or a non-empty \"emails\" list.` and `At most 200 emails per request.`\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false\n- **405** use POST to add, DELETE to remove"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('reports what it did', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.requested).to.be.a('number');",
+                  "    pm.expect(body.data.added.concat(body.data.already_on_list)).to.have.lengthOf(body.data.requested);",
+                  "  });",
+                  "} else {",
+                  "  console.log('email-stack add:', pm.response.code, body.message, '- log in as an admin (is_admin = true) to run this.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove emails from attendee list",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/email-stack",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "email-stack"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emails\": [\n    \"{{stack_email}}\",\n    \"{{stack_email_2}}\"\n  ]\n}"
+            },
+            "description": "Removes addresses from the invite list. Same body shape as the add request.\n\n- **200** `data: { requested, removed_count, removed[], not_found[] }`\n- **401** / **403** / **400** as for the add request\n\n**Removing an address does not delete an account that already registered with it** — it only stops future registrations.\n\nIn supabase-js the method has to be spelled out: `supabase.functions.invoke('email-stack', { method: 'DELETE', body: { email } })`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('reports what it did', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.removed.concat(body.data.not_found)).to.have.lengthOf(body.data.requested);",
+                  "  });",
+                  "} else {",
+                  "  console.log('email-stack remove:', pm.response.code, body.message);",
+                  "}"
+                ]
               }
             }
           ]
