@@ -7,9 +7,9 @@
 // attendee list in public.email_stack. If it is not, the response is
 // { success: false, email_in_stack: false } and no account is created.
 //
-// The client can run that check on its own screen first by calling the same
-// helper directly: POST /rest/v1/rpc/is_email_in_stack { "p_email": "..." }
-// which returns a bare true/false.
+// The client can run that check on its own screen first via the verify-email
+// function: POST /functions/v1/verify-email { "email": "..." }, which returns
+// { success, exists }. Both paths go through the same SQL helper.
 import { guardPost, integer, json, readJson, text } from "../_shared/http.ts";
 import { anonClient, serviceClient, USER_PROFILE_COLUMNS } from "../_shared/supabase.ts";
 
@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
   try {
     // Step 1 — is this email on the invite list?
     const { data: inStack, error: stackError } = await service.rpc(
-      "is_email_in_stack",
+      "verify_email",
       { p_email: email },
     );
     if (stackError) {

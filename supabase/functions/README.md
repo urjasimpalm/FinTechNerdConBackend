@@ -1,12 +1,11 @@
 # Edge functions
 
-Three functions, plus one SQL helper the client can call directly. For the whole
-API surface the app talks to — profile, agenda, chat, missions, notifications —
-see [../../docs/API.md](../../docs/API.md).
+Four functions. For the whole API surface the app talks to — profile, agenda,
+chat, missions, notifications — see [../../docs/API.md](../../docs/API.md).
 
 | What | Call | Auth needed |
 | --- | --- | --- |
-| Is this email on the attendee list? | `POST /rest/v1/rpc/is_email_in_stack` | anon key |
+| Is this email on the attendee list? | `POST /functions/v1/verify-email` | anon key |
 | Register | `POST /functions/v1/register` | anon key |
 | Login | `POST /functions/v1/login` | anon key |
 | Lookup lists (guilds, user types, days, stages) | `GET /functions/v1/config` | anon key |
@@ -22,18 +21,29 @@ you. `config` is documented in full in [../../docs/API.md](../../docs/API.md#5-c
 
 ---
 
-## 1. Email check (optional pre-screen)
+## 1. Verify email (optional pre-screen)
 
-Returns a bare `true` / `false`. Case-insensitive.
+Case-insensitive, trimmed. A miss is a 200 `Success` with `email_exist: false`,
+not an error.
 
 ```
-POST /rest/v1/rpc/is_email_in_stack
-{ "p_email": "wasim@simpalm.com" }
-→ true
+POST /functions/v1/verify-email
+{ "email": "wasim@simpalm.com" }
+→ {
+    "status": "Success",
+    "message": "This email is on the attendee list.",
+    "data": { "email_exist": true }
+  }
 ```
+
+Errors keep the same three keys with `data: null`, e.g.
+`{ "status": "Error", "message": "Email is required.", "data": null }`.
 
 Use it if you want a "this email isn't on the list" message before asking for a
 password. `register` runs the same check itself, so skipping this step is safe.
+
+Backed by `public.verify_email(text)`, which is granted to the service role only
+— this function is the only way to reach it.
 
 ## 2. Register
 
@@ -92,9 +102,10 @@ import { createClient, FunctionsHttpError } from "@supabase/supabase-js";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // step 1 (optional)
-const { data: onList } = await supabase.rpc("is_email_in_stack", {
-  p_email: email,
+const { data: check } = await supabase.functions.invoke("verify-email", {
+  body: { email },
 });
+if (!check.data.email_exist) showNotOnListMessage();
 
 // register
 async function register(body: Record<string, unknown>) {
@@ -174,9 +185,9 @@ curl -i -X POST "$B/functions/v1/login" \
   -d '{"email":"you@example.com","password":"Passw0rd!23"}'
 
 # email check
-curl -X POST "$B/rest/v1/rpc/is_email_in_stack" \
-  -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
-  -H "Content-Type: application/json" -d '{"p_email":"you@example.com"}'
+curl -i -X POST "$B/functions/v1/verify-email" \
+  -H "apikey: $ANON" -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com"}'
 ```
 
 Function logs (`console.error`) stream in the `supabase functions serve`

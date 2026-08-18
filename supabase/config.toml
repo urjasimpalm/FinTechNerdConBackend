@@ -31,13 +31,16 @@ enabled = true
 [analytics]
 enabled = false
 
-# auth/login, auth/register and config are reached before the caller has a
-# session, so they must not require a JWT. They still need the project's anon key
-# in the apikey header, and they validate their own input.
+# auth/login, auth/register, auth/verify-email and config are reached before the
+# caller has a session, so they must not require a JWT. They still need the
+# project's anon key in the apikey header, and they validate their own input.
 [functions.login]
 verify_jwt = false
 
 [functions.register]
+verify_jwt = false
+
+[functions.verify-email]
 verify_jwt = false
 
 [functions.config]

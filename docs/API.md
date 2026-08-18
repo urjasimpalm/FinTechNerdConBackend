@@ -45,27 +45,58 @@ from `supabase status`.
 
 ## 2. Auth
 
-### 2.1 Is this email on the attendee list?
+### 2.1 Verify email — is this email on the attendee list?
 
 Registration is invite-only: the email must already exist in `email_stack`.
 Use this to show "you're not on the list" before asking for a password.
 Matching ignores case and surrounding spaces.
 
 ```
-POST /rest/v1/rpc/is_email_in_stack
+POST /functions/v1/verify-email
 ```
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `p_email` | string | yes | Email to look up |
+| `email` | string | yes | Email to look up |
 
-Returns a bare boolean: `true` or `false`. Never errors on a miss.
+Every response has the same three keys — `status` (`"Success"` / `"Error"`),
+`message`, and `data`:
 
-```ts
-const { data: onList } = await supabase.rpc("is_email_in_stack", { p_email: email });
+```json
+{
+  "status": "Success",
+  "message": "This email is on the attendee list.",
+  "data": { "email_exist": true }
+}
 ```
 
-This step is optional — `register` performs the same check itself.
+| Status | Body |
+| --- | --- |
+| 200 | `{ "status": "Success", "message": "This email is on the attendee list.", "data": { "email_exist": true } }` |
+| 200 | `{ "status": "Success", "message": "This email is not on the attendee list.", "data": { "email_exist": false } }` |
+| 400 | `{ "status": "Error", "message": "Email is required.", "data": null }` |
+| 400 | `{ "status": "Error", "message": "A JSON body is required.", "data": null }` |
+| 405 | `{ "status": "Error", "message": "Method not allowed.", "data": null }` — must be POST |
+| 500 | `{ "status": "Error", "message": "Something went wrong. Please try again.", "data": null }` |
+
+A miss is a **`Success` with `email_exist: false`**, not an error — the lookup
+worked, the answer is just no. Branch on `data.email_exist`, and `data` is
+`null` on every error path so the three keys are always safe to read.
+
+```ts
+const { data: res } = await supabase.functions.invoke("verify-email", {
+  body: { email },
+});
+if (!res.data.email_exist) showNotOnListMessage();
+```
+
+This step is optional — `register` runs the same check itself and returns
+`403 { email_in_stack: false }` if the email isn't on the list.
+
+The underlying SQL helper (`public.verify_email`) is executable by the service
+role only, so this function is the single way to ask the question. Worth putting
+rate limiting in front of it before the event, since it will confirm whether a
+given address is an invited attendee.
 
 ### 2.2 Register
 

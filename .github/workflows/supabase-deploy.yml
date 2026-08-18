@@ -33,5 +33,5 @@ jobs:
 
       - name: Deploy edge functions
         run: |
-          supabase functions deploy login register config \
+          supabase functions deploy login register verify-email config \
             --project-ref $PROJECT_REF

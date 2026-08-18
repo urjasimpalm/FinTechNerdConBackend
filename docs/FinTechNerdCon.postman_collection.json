@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FinTechNerdCon Backend",
-    "description": "Front-end API collection for the FinTechNerdCon Supabase backend.\n\nMirrors docs/API.md. Two kinds of endpoint:\n\n- `/functions/v1/...` edge functions (register, login, config) — public, anon key only\n- `/rest/v1/...` auto-generated REST over the tables, guarded by row-level security — needs the access token from login\n\n## Setup\n\n1. Import the environment file next to this collection (`FinTechNerdCon.postman_environment.json`) and select it.\n2. For a deployed project set `base_url` to `https://<project-ref>.supabase.co` and `anon_key` to the project's anon/publishable key.\n3. Run **1. Auth → Login**. Its test script stores `access_token`, `refresh_token` and `user_id` as collection variables, so every later request is authenticated automatically.\n\nThe collection sends `Authorization: Bearer {{access_token}}` by default; the public endpoints override this with no auth.\n\nAssertions accept every status the API documents for a request (e.g. Register passes on 201, 403 and 409), so a full collection run stays green whether or not the test email is on the attendee list.",
+    "description": "Front-end API collection for the FinTechNerdCon Supabase backend.\n\nMirrors docs/API.md. Two kinds of endpoint:\n\n- `/functions/v1/...` edge functions (verify-email, register, login, config) — public, anon key only\n- `/rest/v1/...` auto-generated REST over the tables, guarded by row-level security — needs the access token from login\n\n## Setup\n\n1. Import the environment file next to this collection (`FinTechNerdCon.postman_environment.json`) and select it.\n2. For a deployed project set `base_url` to `https://<project-ref>.supabase.co` and `anon_key` to the project's anon/publishable key.\n3. Run **1. Auth → Login**. Its test script stores `access_token`, `refresh_token` and `user_id` as collection variables, so every later request is authenticated automatically.\n\nThe collection sends `Authorization: Bearer {{access_token}}` by default; the public endpoints override this with no auth.\n\nAssertions accept every status the API documents for a request (e.g. Register passes on 201, 403 and 409), so a full collection run stays green whether or not the test email is on the attendee list.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -31,25 +31,24 @@
       "description": "Register, login and session handling. All public — anon key only, no bearer token.",
       "item": [
         {
-          "name": "Check email on attendee list",
+          "name": "Verify email (on attendee list?)",
           "request": {
             "auth": { "type": "noauth" },
             "method": "POST",
             "header": [
               { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Authorization", "value": "Bearer {{anon_key}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/rpc/is_email_in_stack",
+              "raw": "{{base_url}}/functions/v1/verify-email",
               "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "rpc", "is_email_in_stack"]
+              "path": ["functions", "v1", "verify-email"]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"p_email\": \"{{test_email}}\"\n}"
+              "raw": "{\n  \"email\": \"{{test_email}}\"\n}"
             },
-            "description": "Registration is invite-only. Returns a bare `true`/`false` — case-insensitive, trimmed, never errors on a miss.\n\n| Parameter | Type | Required |\n| --- | --- | --- |\n| p_email | string | yes |\n\nOptional pre-screen: Register performs the same check itself."
+            "description": "Registration is invite-only — the email must already be in `email_stack`. Case-insensitive and trimmed.\n\n| Parameter | Type | Required |\n| --- | --- | --- |\n| email | string | yes |\n\nEvery response has the same three keys: `status` (`Success`/`Error`), `message`, `data`.\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"This email is on the attendee list.\",\n  \"data\": { \"email_exist\": true }\n}\n```\n\n- **200** `Success` with `data.email_exist: true` — on the list\n- **200** `Success` with `data.email_exist: false` — not on the list. A miss is not an error: the lookup worked, the answer is just no. Branch on `data.email_exist`\n- **400** `Error` — email missing, or the body isn't JSON\n- **405** `Error` — must be POST\n- **500** `Error` — lookup failed\n\n`data` is `null` on every error path, so the three keys are always safe to read.\n\nOptional pre-screen: Register runs the same check itself and returns 403 `email_in_stack: false` when the email isn't on the list.\n\nThe SQL helper behind this (`public.verify_email`) is granted to the service role only, so this function is the only way to ask the question."
           },
           "event": [
             {
@@ -58,7 +57,15 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200', () => pm.response.to.have.status(200));",
-                  "pm.test('returns a boolean', () => pm.expect(pm.response.json()).to.be.a('boolean'));"
+                  "pm.test('Success with data.email_exist', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('Success');",
+                  "  pm.expect(body.message).to.be.a('string');",
+                  "  pm.expect(body.data.email_exist).to.be.a('boolean');",
+                  "});",
+                  "if (!pm.response.json().data.email_exist) {",
+                  "  console.log(pm.collectionVariables.get('test_email') + ' is not on the attendee list — Register will return 403.');",
+                  "}"
                 ]
               }
             }
