@@ -560,7 +560,7 @@
                 "config"
               ]
             },
-            "description": "Every lookup list in one call:\n\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"guilds\":      [{ \"id\": 1, \"name\": \"AI & Agentic Systems\", \"description\": \"...\" }],\n    \"user_type\":   [{ \"id\": 1, \"name\": \"Builder\" }],\n    \"event-quest\": [{ \"id\": 4, \"name\": \"Main Quests\" }],\n    \"event-day\":   [{ \"id\": 8, \"name\": \"Day 0\" }],\n    \"stage-type\":  [{ \"id\": 11, \"name\": \"Stage 1\" }]\n  }\n}\n```\n\nIds are one shared sequence across all types, so always match on `type` + `id`, never `id` alone."
+            "description": "Every lookup list in one call:\n\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"guilds\":      [{ \"id\": 1, \"name\": \"AI & Agentic Systems\", \"description\": null }],\n    \"user_type\":   [{ \"id\": 1, \"name\": \"Builder\", \"description\": \"I create products, tools, and systems.\" }],\n    \"event-quest\": [{ \"id\": 4, \"name\": \"Main Quests\", \"description\": null }],\n    \"event-day\":   [{ \"id\": 8, \"name\": \"Day 0\", \"description\": null }],\n    \"stage-type\":  [{ \"id\": 11, \"name\": \"Stage 1\", \"description\": null }]\n  }\n}\n```\n\nEvery row is `{ id, name, description }`; `description` is only set for `user_type` today and null elsewhere.\n\nIds are one shared sequence across all types, so always match on `type` + `id`, never `id` alone."
           },
           "event": [
             {

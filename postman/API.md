@@ -412,20 +412,25 @@ user has a token.
   "success": true,
   "data": {
     "guilds": [
-      { "id": 1, "name": "AI & Agentic Systems", "description": "..." },
-      { "id": 2, "name": "Banking", "description": "..." }
+      { "id": 1, "name": "AI & Agentic Systems", "description": null },
+      { "id": 2, "name": "Banking", "description": null }
     ],
-    "user_type":   [{ "id": 1, "name": "Builder" }, { "id": 2, "name": "Operator" }, { "id": 3, "name": "Explorer" }],
-    "event-quest": [{ "id": 4, "name": "Main Quests" }, { "id": 5, "name": "Side Quests" }, { "id": 6, "name": "Bonus Quests" }, { "id": 7, "name": "My Schedule" }],
-    "event-day":   [{ "id": 8, "name": "Day 0" }, { "id": 9, "name": "Day 1" }, { "id": 10, "name": "Day 2" }],
-    "stage-type":  [{ "id": 11, "name": "Stage 1" }, { "id": 12, "name": "Stage 2" }, { "id": 13, "name": "Stage 3" }, { "id": 14, "name": "Stage 4" }]
+    "user_type":   [{ "id": 1, "name": "Builder", "description": "I create products, tools, and systems." }, { "id": 2, "name": "Operator", "description": "I run and optimize processes to keep things moving." }, { "id": 3, "name": "Explorer", "description": "I discover new ideas, markets, and opportunities." }],
+    "event-quest": [{ "id": 4, "name": "Main Quests", "description": null }, { "id": 5, "name": "Side Quests", "description": null }, { "id": 6, "name": "Bonus Quests", "description": null }, { "id": 7, "name": "My Schedule", "description": null }],
+    "event-day":   [{ "id": 8, "name": "Day 0", "description": null }, { "id": 9, "name": "Day 1", "description": null }, { "id": 10, "name": "Day 2", "description": null }],
+    "stage-type":  [{ "id": 11, "name": "Stage 1", "description": null }, { "id": 12, "name": "Stage 2", "description": null }, { "id": 13, "name": "Stage 3", "description": null }, { "id": 14, "name": "Stage 4", "description": null }]
   }
 }
 ```
 
+Every row is `{ id, name, description }`. `description` is only populated for
+`user_type` today — guilds are names only, and the other config types have no
+copy — so treat `null` as "nothing to show" rather than an error. `guilds` has 15
+rows; the sample above is trimmed.
+
 | Status | Body |
 | --- | --- |
-| 200 | above — `guilds` rows have `description`, config rows are `{ id, name }` |
+| 200 | above — rows are `{ id, name, description }`, `description` null except for `user_type` |
 | 404 | `{ "success": false, "message": "Unknown config type \"typo\".", "available": ["guilds", "event-day", ...] }` — path form only |
 | 405 | `{ "success": false, "message": "Method not allowed." }` — GET only |
 
@@ -462,7 +467,7 @@ filter server-side:
 | Table | Call |
 | --- | --- |
 | `guilds` | `GET /rest/v1/guilds?select=id,name,description&order=id` |
-| `configs` | `GET /rest/v1/configs?select=id,name&type=eq.user_type` |
+| `configs` | `GET /rest/v1/configs?select=id,name,description&type=eq.user_type` |
 
 ---
 

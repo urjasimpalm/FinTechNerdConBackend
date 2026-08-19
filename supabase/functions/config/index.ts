@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
         : Promise.resolve({ data: [], error: null }),
       requested.length === 0 || configTypes.length > 0
         ? (() => {
-          const query = service.from("configs").select("id, type, name").order("id");
+          const query = service.from("configs").select("id, type, name, description").order("id");
           return configTypes.length > 0 ? query.in("type", configTypes) : query;
         })()
         : Promise.resolve({ data: [], error: null }),
@@ -82,10 +82,16 @@ Deno.serve(async (req) => {
     // up here without a code change.
     const data: Record<string, unknown[]> = {};
     if (wantsGuilds) data[GUILDS_KEY] = guildsResult.data ?? [];
+    // description is carried through for every type so the shape is uniform;
+    // only user_type has copy today, so it is null elsewhere.
     for (const row of (configsResult.data ?? []) as Array<
-      { id: number; type: string; name: string }
+      { id: number; type: string; name: string; description: string | null }
     >) {
-      (data[row.type] ??= []).push({ id: row.id, name: row.name });
+      (data[row.type] ??= []).push({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+      });
     }
     // Keep an explicitly requested but empty type present as [], so the client
     // never has to null-check the key it asked for.
