@@ -118,47 +118,28 @@ POST /functions/v1/register
 | `device_type` | integer | no | For push delivery |
 | `device_token` | string | no | FCM/APNs token |
 
-**201 — created and signed in**
+**201 — created**
 
 ```json
 {
   "success": true,
-  "email_in_stack": true,
-  "message": "Registration successful.",
-  "data": {
-    "token": "eyJhbGciOi...",
-    "token_type": "bearer",
-    "expires_in": 3600,
-    "expires_at": 1786728189,
-    "refresh_token": "2r5psksaujyt",
-    "user": {
-      "id": "032b5171-0456-4db4-ab1e-571a77e15286",
-      "first_name": "Test",
-      "last_name": "User",
-      "email": "you@example.com",
-      "user_type_config_id": null,
-      "guild_id": null,
-      "company_name": null,
-      "job_title": null,
-      "profile_image": null,
-      "device_type": null,
-      "device_token": null,
-      "created_at": "2026-08-14T16:23:09.433673+00:00",
-      "updated_at": "2026-08-14T16:23:09.433673+00:00"
-    }
-  }
+  "message": "Registration successful."
 }
 ```
 
+Success carries the status and message only — no token, no session, no profile.
+
 | Status | Body | What the UI should do |
 | --- | --- | --- |
-| 201 | above | Store the session, go to the app |
+| 201 | above | Go to login and sign in with the same credentials |
 | 403 | `{ "success": false, "email_in_stack": false, "message": "This email is not on the attendee list." }` | Show "not on the list"; nothing was created |
 | 409 | `{ "success": false, "email_in_stack": true, "message": "An account with this email already exists." }` | Send them to login |
 | 400 | `{ "success": false, "message": "..." }` | Show the message (missing field, short password, bad `guild_id`/`user_type_config_id`) |
 | 500 | `{ "success": false, "message": "Something went wrong. Please try again." }` | Generic retry |
 
-Register already returns a session, so **do not** call login afterwards.
+The account is created already confirmed, so **call login right after a 201** to
+get the token and the profile row. The two failure cases still carry
+`email_in_stack` so the UI can tell "not invited" from "already registered".
 
 ### 2.3 Login
 
@@ -178,7 +159,8 @@ POST /functions/v1/login
 | 400 | `{ "success": false, "message": "Email and password are required." }` |
 | 405 | `{ "success": false, "message": "Method not allowed." }` — must be POST |
 
-`data` is identical in shape to register's. Wrong password and unknown email
+`data.user` is the full `public.users` profile row — this is where the client
+picks it up after registering. Wrong password and unknown email
 both return the same 401 on purpose, so no one can probe which emails have
 accounts — don't try to distinguish them in the UI.
 
@@ -290,8 +272,9 @@ async function callFn(name: string, body: unknown) {
 
 ### 2.7 Holding the session
 
-After register/login, hand the tokens to the SDK, or every later request runs as
-anonymous and RLS returns empty results:
+Tokens come from login only — register returns none — so after logging in, hand
+them to the SDK, or every later request runs as anonymous and RLS returns empty
+results:
 
 ```ts
 await supabase.auth.setSession({

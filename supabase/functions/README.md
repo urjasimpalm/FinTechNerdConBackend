@@ -84,13 +84,14 @@ POST /functions/v1/register
 
 | Status | Body | Meaning |
 | --- | --- | --- |
-| 201 | `{ success: true, email_in_stack: true, message, data: { token, token_type, expires_in, expires_at, refresh_token, user } }` | Account created and signed in |
+| 201 | `{ success: true, message }` | Account created — status and message only, no session or profile |
 | 403 | `{ success: false, email_in_stack: false, message }` | Email is not on the attendee list — nothing was created |
 | 409 | `{ success: false, email_in_stack: true, message }` | Already registered → send them to login |
 | 400 | `{ success: false, message }` | Missing/invalid field, password under 8 chars, or a bad `guild_id` / `user_type_config_id` |
 
-`data.user` is the full `public.users` profile row. Registration returns a
-session, so there is no need to call `login` afterwards.
+Registration returns no data of its own. The account is created already
+confirmed, so call `login` straight after a 201 to get the token and the
+`public.users` profile row.
 
 ## 3. Login
 
@@ -169,6 +170,7 @@ async function register(body: Record<string, unknown>) {
     throw payload; // { success: false, email_in_stack?: boolean, message }
   }
   if (error) throw error;
+  // { success: true, message } — nothing else, so log in next for the session.
   return data;
 }
 

@@ -10,8 +10,11 @@
 // The client can run that check on its own screen first via the verify-email
 // function: POST /functions/v1/verify-email { "email": "..." }, which returns
 // { success, exists }. Both paths go through the same SQL helper.
+//
+// A successful registration answers with the status and message only — no session
+// and no profile row. The client sends the user to login afterwards.
 import { guardPost, integer, json, readJson, text } from "../_shared/http.ts";
-import { anonClient, serviceClient, USER_PROFILE_COLUMNS } from "../_shared/supabase.ts";
+import { serviceClient } from "../_shared/supabase.ts";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -95,8 +98,9 @@ Deno.serve(async (req) => {
     }
 
     // Step 3 — the profile row. public.users has no insert policy, so this only
-    // works through the service role.
-    const { data: profile, error: profileError } = await service
+    // works through the service role. Nothing is selected back: the response
+    // carries no profile, and login returns it on the next call.
+    const { error: profileError } = await service
       .from("users")
       .insert({
         id: created.user.id,
@@ -110,9 +114,7 @@ Deno.serve(async (req) => {
         profile_image: text(body.profile_image),
         device_type: integer(body.device_type),
         device_token: text(body.device_token),
-      })
-      .select(USER_PROFILE_COLUMNS)
-      .single();
+      });
 
     if (profileError) {
       // Do not leave an auth account behind with no profile attached to it —
@@ -125,24 +127,11 @@ Deno.serve(async (req) => {
       }, 400);
     }
 
-    // Step 4 — hand back a session so the client does not have to call login.
-    const { data: signIn } = await anonClient().auth.signInWithPassword({
-      email,
-      password,
-    });
-
+    // The account and profile both exist now. No session is created here, so the
+    // client calls login next with the same credentials.
     return json({
       success: true,
-      email_in_stack: true,
       message: "Registration successful.",
-      data: {
-        token: signIn?.session?.access_token ?? null,
-        token_type: signIn?.session?.token_type ?? null,
-        expires_in: signIn?.session?.expires_in ?? null,
-        expires_at: signIn?.session?.expires_at ?? null,
-        refresh_token: signIn?.session?.refresh_token ?? null,
-        user: profile,
-      },
     }, 201);
   } catch (err) {
     console.error("register failed", err);

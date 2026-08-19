@@ -213,7 +213,7 @@
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\",\n  \"user_type_config_id\": {{user_type_config_id}},\n  \"guild_id\": {{guild_id}},\n  \"company_name\": \"Simpalm\",\n  \"job_title\": \"Engineer\"\n}"
             },
-            "description": "| Parameter | Type | Required | Constraints |\n| --- | --- | --- | --- |\n| email | string | yes | Valid email, must be on the attendee list |\n| password | string | yes | Min 8 characters |\n| first_name | string | yes | Non-empty |\n| last_name | string | yes | Non-empty |\n| user_type_config_id | integer | no | configs.id where type = 'user_type' |\n| guild_id | integer | no | guilds.id |\n| company_name | string | no | |\n| job_title | string | no | |\n| profile_image | string | no | URL |\n| device_type | integer | no | Push delivery |\n| device_token | string | no | FCM/APNs token |\n\nResponses:\n\n- **201** — created and signed in; returns the same `data` shape as Login\n- **403** `email_in_stack: false` — not on the attendee list, nothing created\n- **409** — already registered, send the user to Login\n- **400** — missing/invalid field, password under 8 chars, bad guild_id/user_type_config_id\n\nReturns a session, so do not call Login afterwards."
+            "description": "| Parameter | Type | Required | Constraints |\n| --- | --- | --- | --- |\n| email | string | yes | Valid email, must be on the attendee list |\n| password | string | yes | Min 8 characters |\n| first_name | string | yes | Non-empty |\n| last_name | string | yes | Non-empty |\n| user_type_config_id | integer | no | configs.id where type = 'user_type' |\n| guild_id | integer | no | guilds.id |\n| company_name | string | no | |\n| job_title | string | no | |\n| profile_image | string | no | URL |\n| device_type | integer | no | Push delivery |\n| device_token | string | no | FCM/APNs token |\n\nResponses:\n\n- **201** — created; body is `{ success, message }` only, with no session or profile\n- **403** `email_in_stack: false` — not on the attendee list, nothing created\n- **409** — already registered, send the user to Login\n- **400** — missing/invalid field, password under 8 chars, bad guild_id/user_type_config_id\n\nRegister hands back nothing but the status and message \u2014 run Login next to get the token."
           },
           "event": [
             {
@@ -224,13 +224,12 @@
                   "pm.test('documented status', () => pm.expect([201, 400, 403, 409]).to.include(pm.response.code));",
                   "const body = pm.response.json();",
                   "if (pm.response.code === 201) {",
-                  "  pm.collectionVariables.set('access_token', body.data.token);",
-                  "  pm.collectionVariables.set('refresh_token', body.data.refresh_token);",
-                  "  pm.collectionVariables.set('user_id', body.data.user.id);",
-                  "  pm.test('returns a session and profile', () => {",
-                  "    pm.expect(body.data.token).to.be.a('string');",
-                  "    pm.expect(body.data.user.id).to.be.a('string');",
+                  "  pm.test('status and message only', () => {",
+                  "    pm.expect(body.success).to.eql(true);",
+                  "    pm.expect(body.message).to.be.a('string');",
+                  "    pm.expect(body.data).to.be.undefined;",
                   "  });",
+                  "  console.log('Registered. Run Login next for the token.');",
                   "} else {",
                   "  console.log('Register skipped:', pm.response.code, body.message);",
                   "}"
