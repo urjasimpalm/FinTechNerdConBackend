@@ -7,6 +7,9 @@
 // Both require a real user token (see requireUser) and only ever touch that
 // caller's own row, so there is no id in the path or body.
 //
+// Guilds are a 1..3 selection in public.user_guilds: GET returns them as a
+// `guilds` array, and PUT takes `guild_ids`.
+//
 // PUT accepts either JSON or multipart/form-data. The multipart form is how a
 // picked image gets uploaded: send the file under `profile_image` and it lands in
 // the profile-images storage bucket, with its public URL saved on the profile.
@@ -19,6 +22,13 @@
 import { requireUser } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { fail, integer, ok, text } from "../_shared/http.ts";
+import {
+  findUnknownGuild,
+  PROFILE_SELECT,
+  readGuildIds,
+  setGuilds,
+  shapeProfile,
+} from "../_shared/profile.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const ROUTES: Record<string, string[]> = {
@@ -37,32 +47,18 @@ const IMAGE_TYPES: Record<string, string> = {
   "image/heif": "heif",
 };
 
-// guild and user_type are embedded as { id, name, description } rather than left
-// as bare ids: every screen that shows a profile shows their names.
-const PROFILE_SELECT = `
-  id,
-  first_name,
-  last_name,
-  email,
-  nerd_number,
-  company_name,
-  job_title,
-  profile_image,
-  user_type_config_id,
-  guild_id,
-  created_at,
-  updated_at,
-  user_type:configs (id, name, description),
-  guild:guilds (id, name, description)
-`;
-
 // The editable set. Anything else in the body is ignored rather than rejected, so
 // a client can PUT a whole profile object back — including nerd_number and email,
 // which are not the user's to change.
+//
+// `guild_ids` is the 1..3 guild selection and is handled apart from the rest: it
+// lands in public.user_guilds, not in a column on public.users. `guild_id` is
+// accepted as a one-guild alias so an older client keeps working.
 const EDITABLE = [
   "first_name",
   "last_name",
   "user_type_config_id",
+  "guild_ids",
   "guild_id",
   "company_name",
   "job_title",
@@ -103,7 +99,7 @@ async function loadProfile(userId: string): Promise<
 
   return {
     profile: {
-      ...row,
+      ...shapeProfile(row),
       // sum() and rank() come back as bigints, i.e. strings over PostgREST.
       total_xp: Number(standing?.total_points ?? 0),
       rank: standing?.rank == null ? null : Number(standing.rank),
@@ -238,6 +234,17 @@ async function readSubmission(
 
     let file: File | null = null;
     for (const key of EDITABLE) {
+      // A form has no arrays, so a multi-guild selection arrives either as
+      // repeated `guild_ids` parts or as one comma-separated value. Collect every
+      // part and let readGuildIds sort out which it was.
+      if (key === "guild_ids") {
+        const values = [...form.getAll(key), ...form.getAll(`${key}[]`)].filter(
+          (part): part is string => typeof part === "string",
+        );
+        if (values.length > 0) fields.set(key, values.length === 1 ? values[0] : values);
+        continue;
+      }
+
       const value = form.get(key);
       if (value === null) continue;
       if (value instanceof File) {
@@ -274,35 +281,21 @@ async function readSubmission(
   return { fields, file: null };
 }
 
-/** Both lookups have to exist, or the update would fail on a foreign key. */
+/** The user type has to exist, or the update would fail on a foreign key. */
 async function validateLookups(
   updates: Record<string, unknown>,
 ): Promise<string | null> {
-  const service = serviceClient();
+  if (typeof updates.user_type_config_id !== "number") return null;
 
-  if (typeof updates.user_type_config_id === "number") {
-    const { data, error } = await service
-      .from("configs")
-      .select("id")
-      .eq("id", updates.user_type_config_id)
-      .eq("type", "user_type")
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) {
-      return `user_type_config_id ${updates.user_type_config_id} is not a user type. Fetch the list from GET config/user_type.`;
-    }
-  }
-
-  if (typeof updates.guild_id === "number") {
-    const { data, error } = await service
-      .from("guilds")
-      .select("id")
-      .eq("id", updates.guild_id)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) {
-      return `guild_id ${updates.guild_id} does not exist. Fetch the list from GET config/guilds.`;
-    }
+  const { data, error } = await serviceClient()
+    .from("configs")
+    .select("id")
+    .eq("id", updates.user_type_config_id)
+    .eq("type", "user_type")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    return `user_type_config_id ${updates.user_type_config_id} is not a user type. Fetch the list from GET config/user_type.`;
   }
 
   return null;
@@ -337,22 +330,46 @@ async function updateProfile(req: Request, userId: string): Promise<Response> {
     updates[key] = raw === null ? null : text(raw);
   }
 
-  for (const key of ["user_type_config_id", "guild_id"] as const) {
-    if (!fields.has(key)) continue;
-    const raw = fields.get(key);
+  if (fields.has("user_type_config_id")) {
+    const raw = fields.get("user_type_config_id");
     if (raw === null) {
-      updates[key] = null;
-      continue;
+      updates.user_type_config_id = null;
+    } else {
+      const value = integer(raw);
+      if (value === null) {
+        return fail(
+          "user_type_config_id must be a whole number, or null to clear it.",
+          400,
+        );
+      }
+      updates.user_type_config_id = value;
     }
-    const value = integer(raw);
-    if (value === null) {
-      return fail(`${key} must be a whole number, or null to clear it.`, 400);
-    }
-    updates[key] = value;
   }
 
-  // Checked before the image is uploaded, so a bad guild_id does not leave an
-  // orphaned file in the bucket.
+  // The guild selection. Sent as guild_ids (a JSON list, repeated form parts or a
+  // comma-separated string); `guild_id` still works for one guild. Unlike the
+  // other optional fields it cannot be cleared — a user always belongs to at
+  // least one guild — so leave the key out to keep the current selection.
+  const guildField = fields.has("guild_ids")
+    ? fields.get("guild_ids")
+    : fields.has("guild_id")
+    ? fields.get("guild_id")
+    : undefined;
+  const guilds = readGuildIds(guildField);
+  if (guilds !== null && "error" in guilds) return fail(guilds.error, 400);
+
+  if (guilds !== null) {
+    const unknownGuild = await findUnknownGuild(guilds.ids);
+    if (unknownGuild !== null) {
+      return fail(
+        `Guild ${unknownGuild} does not exist. Fetch the list from GET config/guilds.`,
+        400,
+      );
+    }
+  }
+
+  // Checked before the image is uploaded, so a bad user_type_config_id does not
+  // leave an orphaned file in the bucket.
   const lookupError = await validateLookups(updates);
   if (lookupError) return fail(lookupError, 400);
 
@@ -388,7 +405,7 @@ async function updateProfile(req: Request, userId: string): Promise<Response> {
     }
   }
 
-  if (Object.keys(updates).length === 0) {
+  if (Object.keys(updates).length === 0 && guilds === null) {
     return fail(
       `Nothing to update. Editable fields: ${EDITABLE.join(", ")}.`,
       400,
@@ -404,10 +421,19 @@ async function updateProfile(req: Request, userId: string): Promise<Response> {
       .data?.profile_image
     : null;
 
-  const { error } = await service.from("users").update(updates).eq("id", userId);
-  if (error) {
-    console.error("profile update failed", error);
-    return fail("Your profile could not be saved. Please try again.", 400);
+  if (Object.keys(updates).length > 0) {
+    const { error } = await service.from("users").update(updates).eq("id", userId);
+    if (error) {
+      console.error("profile update failed", error);
+      return fail("Your profile could not be saved. Please try again.", 400);
+    }
+  }
+
+  // Applied by the RPC in one transaction, so the selection is never left
+  // half-replaced and never ends up empty.
+  if (guilds !== null) {
+    const guildError = await setGuilds(userId, guilds.ids);
+    if (guildError) return fail(guildError.error, 400);
   }
 
   // Best effort, and only for files we uploaded ourselves under this user's

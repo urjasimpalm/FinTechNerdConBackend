@@ -76,6 +76,11 @@
       "type": "string"
     },
     {
+      "key": "guild_id_2",
+      "value": "2",
+      "description": "Second guild for the 1..3 selection used by Register and Update my profile."
+    },
+    {
       "key": "mission_id",
       "value": "1",
       "type": "string"
@@ -216,9 +221,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\",\n  \"user_type_config_id\": {{user_type_config_id}},\n  \"guild_id\": {{guild_id}},\n  \"company_name\": \"Simpalm\",\n  \"job_title\": \"Engineer\"\n}"
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\",\n  \"guild_ids\": [{{guild_id}}, {{guild_id_2}}],\n  \"user_type_config_id\": {{user_type_config_id}},\n  \"company_name\": \"Simpalm\",\n  \"job_title\": \"Engineer\"\n}"
             },
-            "description": "| Parameter | Type | Required | Constraints |\n| --- | --- | --- | --- |\n| email | string | yes | Valid email, must be on the attendee list |\n| password | string | yes | Min 8 characters |\n| first_name | string | yes | Non-empty |\n| last_name | string | yes | Non-empty |\n| user_type_config_id | integer | no | configs.id where type = 'user_type' |\n| guild_id | integer | no | guilds.id |\n| company_name | string | no | |\n| job_title | string | no | |\n| profile_image | string | no | URL |\n| device_type | integer | no | Push delivery |\n| device_token | string | no | FCM/APNs token |\n\nResponses:\n\n- **201** — created; body is `{ success, message }` only, with no session or profile\n- **403** `email_in_stack: false` — not on the attendee list, nothing created\n- **409** — already registered, send the user to Login\n- **400** — missing/invalid field, password under 8 chars, bad guild_id/user_type_config_id\n\nRegister hands back nothing but the status and message — run Login next to get the token."
+            "description": "| Parameter | Type | Required | Constraints |\n| --- | --- | --- | --- |\n| email | string | yes | Valid email, must be on the attendee list |\n| password | string | yes | Min 8 characters |\n| first_name | string | yes | Non-empty |\n| last_name | string | yes | Non-empty |\n| guild_ids | integer[] | **yes** | 1 to 3 guilds.id values. A single `guild_id` is still accepted as a one-guild selection |\n| user_type_config_id | integer | no | configs.id where type = 'user_type' |\n| company_name | string | no | |\n| job_title | string | no | |\n| profile_image | string | no | URL |\n| device_type | integer | no | Push delivery |\n| device_token | string | no | FCM/APNs token |\n\nResponses:\n\n- **201** — created; body is `{ success, message }` only, with no session or profile\n- **403** `email_in_stack: false` — not on the attendee list, nothing created\n- **409** — already registered, send the user to Login\n- **400** — missing/invalid field, password under 8 chars, no guilds or more than 3, bad guild_ids/user_type_config_id\n\nRegister hands back nothing but the status and message — run Login next to get the token.\n\nGuilds are chosen at sign-up: at least 1, at most 3. Nothing is created if the selection is rejected."
           },
           "event": [
             {
@@ -660,7 +665,7 @@
                 "profile"
               ]
             },
-            "description": "Everything a profile screen needs in one call, in the { status, message, data } envelope:\n\n- the editable columns\n- `nerd_number` — the badge number, e.g. \"00427\", issued at registration and never editable\n- `guild` and `user_type` as `{ id, name, description }` (null when unset), alongside the raw ids\n- `profile_image` as a full public URL (or null)\n- `total_xp` and `rank` from the leaderboard — 0 / null until a mission is completed\n\nThe row is resolved from the bearer token, so there is no id to pass. 401 if the token is missing or expired (the anon key alone is not enough)."
+            "description": "Everything a profile screen needs in one call, in the { status, message, data } envelope:\n\n- the editable columns\n- `nerd_number` — the badge number, e.g. \"00427\", issued at registration and never editable\n- `user_type` as `{ id, name, description }` (null when unset), plus `guilds` — the user's 1 to 3 guilds in the same shape\n- `profile_image` as a full public URL (or null)\n- `total_xp` and `rank` from the leaderboard — 0 / null until a mission is completed\n\nThe row is resolved from the bearer token, so there is no id to pass. 401 if the token is missing or expired (the anon key alone is not enough)."
           },
           "event": [
             {
@@ -676,6 +681,7 @@
                   "  pm.expect(body.data.nerd_number).to.match(/^\\d{5,}$/);",
                   "  pm.expect(body.data).to.have.property('total_xp');",
                   "  pm.expect(body.data).to.have.property('rank');",
+                  "  pm.expect(body.data.guilds).to.be.an('array').with.length.within(1, 3);",
                   "});",
                   "if (body.data && body.data.nerd_number) {",
                   "  pm.collectionVariables.set('nerd_number', body.data.nerd_number);",
@@ -726,9 +732,16 @@
                   "type": "text"
                 },
                 {
-                  "key": "guild_id",
+                  "key": "guild_ids",
                   "value": "{{guild_id}}",
-                  "type": "text"
+                  "type": "text",
+                  "description": "1 to 3 guilds. Repeat this row per guild, or send one comma-separated value (2,3)."
+                },
+                {
+                  "key": "guild_ids",
+                  "value": "{{guild_id_2}}",
+                  "type": "text",
+                  "description": "Second guild. Untick both rows to keep the current selection."
                 },
                 {
                   "key": "company_name",
@@ -748,7 +761,7 @@
                 }
               ]
             },
-            "description": "Partial update of my own profile, as multipart/form-data so the picked image goes in the same request. Do not set Content-Type by hand — Postman adds the boundary.\n\nEditable fields (all optional, send only what you are changing):\n\n| Field | Notes |\n| --- | --- |\n| first_name | Cannot be empty |\n| last_name | Cannot be empty |\n| user_type_config_id | `configs.id` where type = 'user_type' — from GET All config |\n| guild_id | `guilds.id` — from GET All config |\n| company_name | Empty value clears it |\n| job_title | Empty value clears it |\n| profile_image | File part. Uploaded to the `profile-images` bucket under `<user-id>/<timestamp>.<ext>`; the saved value is its public URL and the previous upload is deleted |\n\nUntick a row to leave that field alone. A form cannot carry null, so an empty value (or the literal `null`) clears an optional field, and an unselected file part means \"keep the current picture\".\n\nnerd_number, email and is_admin are ignored if sent — they are not the user's to change. device_type / device_token are not editable here either; patch those on `/rest/v1/users?id=eq.{{user_id}}`.\n\nThe response is the same shape as GET My profile, so the screen can re-render from it.\n\n## Sending JSON instead\n\nSwitch Body to **raw / JSON** and the same fields work, with `null` to clear one. There, `profile_image` takes a data URI (`data:image/jpeg;base64,…`) to upload, an https URL to point at an image hosted elsewhere, or null to remove it."
+            "description": "Partial update of my own profile, as multipart/form-data so the picked image goes in the same request. Do not set Content-Type by hand — Postman adds the boundary.\n\nEditable fields (all optional, send only what you are changing):\n\n| Field | Notes |\n| --- | --- |\n| first_name | Cannot be empty |\n| last_name | Cannot be empty |\n| user_type_config_id | `configs.id` where type = 'user_type' — from GET All config |\n| guild_ids | 1 to 3 `guilds.id` values — repeat the row per guild, or send `2,3` in one value. Replaces the whole selection; it cannot be emptied, so untick to keep the current one |\n| company_name | Empty value clears it |\n| job_title | Empty value clears it |\n| profile_image | File part. Uploaded to the `profile-images` bucket under `<user-id>/<timestamp>.<ext>`; the saved value is its public URL and the previous upload is deleted |\n\nUntick a row to leave that field alone. A form cannot carry null, so an empty value (or the literal `null`) clears an optional field, and an unselected file part means \"keep the current picture\".\n\nnerd_number, email and is_admin are ignored if sent — they are not the user's to change. device_type / device_token are not editable here either; patch those on `/rest/v1/users?id=eq.{{user_id}}`.\n\nThe response is the same shape as GET My profile, so the screen can re-render from it.\n\n## Sending JSON instead\n\nSwitch Body to **raw / JSON** and the same fields work, with `null` to clear one. There, `profile_image` takes a data URI (`data:image/jpeg;base64,…`) to upload, an https URL to point at an image hosted elsewhere, or null to remove it."
           },
           "event": [
             {
@@ -762,8 +775,12 @@
                   "  pm.expect(body.status).to.eql('Success');",
                   "  pm.expect(body.message).to.eql('Profile updated.');",
                   "  pm.expect(body.data.job_title).to.eql('CTO');",
-                  "  pm.expect(body.data.guild.id).to.eql(Number(pm.variables.get('guild_id')));",
                   "  pm.expect(body.data.user_type.id).to.eql(Number(pm.variables.get('user_type_config_id')));",
+                  "});",
+                  "pm.test('1 to 3 guilds, matching what was sent', () => {",
+                  "  const ids = body.data.guilds.map((g) => g.id);",
+                  "  pm.expect(ids.length).to.be.within(1, 3);",
+                  "  pm.expect(ids).to.include(Number(pm.variables.get('guild_id')));",
                   "});",
                   "// Only asserted when a file was actually attached to the form.",
                   "if (body.data && body.data.profile_image) {",
@@ -837,27 +854,31 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/users?select=id,first_name,last_name,company_name&guild_id=eq.{{guild_id}}",
+              "raw": "{{base_url}}/rest/v1/user_guilds?select=guild_id,users(id,first_name,last_name,company_name,job_title,profile_image)&guild_id=eq.{{guild_id}}&limit=20",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "rest",
                 "v1",
-                "users"
+                "user_guilds"
               ],
               "query": [
                 {
                   "key": "select",
-                  "value": "id,first_name,last_name,company_name"
+                  "value": "guild_id,users(id,first_name,last_name,company_name,job_title,profile_image)"
                 },
                 {
                   "key": "guild_id",
                   "value": "eq.{{guild_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
                 }
               ]
             },
-            "description": "Filter operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `in`, `is`."
+            "description": "Guilds are many-to-many through `user_guilds`, so filtering by guild reads that table and embeds the attendee. `users.guild_id` no longer exists."
           },
           "event": [
             {
@@ -865,7 +886,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('rows carry the embedded attendee', () => {",
+                  "  const rows = pm.response.json();",
+                  "  pm.expect(rows).to.be.an('array');",
+                  "  if (rows.length) pm.expect(rows[0].users).to.be.an('object');",
+                  "});"
                 ]
               }
             }

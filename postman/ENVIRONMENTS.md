@@ -86,9 +86,8 @@ Alternatively these can be pushed from `config.toml` — see
 ### 6. Seed the reference data
 
 `db push` applies migrations but does **not** run [seed.sql](../seed.sql), so
-`guilds`, `configs` and `missions` come up empty — and registering with a
-`guild_id` or `user_type_config_id` will fail on a foreign key until they're
-populated. Run it once against staging:
+`guilds`, `configs` and `missions` come up empty — and registration fails outright
+until they are populated, since it requires 1 to 3 existing `guild_ids`. Run it once against staging:
 
 ```bash
 supabase link --project-ref <staging-ref>

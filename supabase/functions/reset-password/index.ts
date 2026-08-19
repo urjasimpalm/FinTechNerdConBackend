@@ -10,7 +10,8 @@
 // Returns a session on success, so the app can go straight into the logged-in
 // state instead of bouncing the user back to the login screen.
 import { fail, guardPostEnvelope, ok, readJson, text } from "../_shared/http.ts";
-import { anonClient, serviceClient, USER_PROFILE_COLUMNS } from "../_shared/supabase.ts";
+import { SESSION_PROFILE_SELECT, shapeProfile } from "../_shared/profile.ts";
+import { anonClient, serviceClient } from "../_shared/supabase.ts";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -65,7 +66,7 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await serviceClient()
       .from("users")
-      .select(USER_PROFILE_COLUMNS)
+      .select(SESSION_PROFILE_SELECT)
       .eq("id", verified.user.id)
       .maybeSingle();
 
@@ -77,7 +78,9 @@ Deno.serve(async (req) => {
       expires_in: session.expires_in,
       expires_at: session.expires_at,
       refresh_token: session.refresh_token,
-      user: profile ?? { id: verified.user.id, email: verified.user.email },
+      user: profile
+        ? shapeProfile(profile)
+        : { id: verified.user.id, email: verified.user.email },
     });
   } catch (err) {
     console.error("reset-password failed", err);

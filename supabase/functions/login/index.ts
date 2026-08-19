@@ -3,7 +3,8 @@
 // Verifies the credentials against auth.users and, on success, returns the
 // access token plus the caller's public.users profile.
 import { guardPost, json, readJson, text } from "../_shared/http.ts";
-import { anonClient, serviceClient, USER_PROFILE_COLUMNS } from "../_shared/supabase.ts";
+import { SESSION_PROFILE_SELECT, shapeProfile } from "../_shared/profile.ts";
+import { anonClient, serviceClient } from "../_shared/supabase.ts";
 
 Deno.serve(async (req) => {
   const blocked = guardPost(req);
@@ -40,7 +41,7 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await serviceClient()
       .from("users")
-      .select(USER_PROFILE_COLUMNS)
+      .select(SESSION_PROFILE_SELECT)
       .eq("id", data.user.id)
       .maybeSingle();
 
@@ -53,7 +54,10 @@ Deno.serve(async (req) => {
         expires_in: data.session.expires_in,
         expires_at: data.session.expires_at,
         refresh_token: data.session.refresh_token,
-        user: profile ?? { id: data.user.id, email: data.user.email },
+        // The user_guilds join rows are flattened into `guilds`.
+        user: profile
+          ? shapeProfile(profile)
+          : { id: data.user.id, email: data.user.email },
       },
     });
   } catch (err) {

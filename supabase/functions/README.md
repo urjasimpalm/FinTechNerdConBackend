@@ -72,10 +72,11 @@ POST /functions/v1/register
   "password": "Passw0rd!23",
   "first_name": "Wasim",
   "last_name": "Raza",
+  // 1 to 3 guilds — required
+  "guild_ids": [1, 4],
 
   // all optional
   "user_type_config_id": 1,
-  "guild_id": 2,
   "company_name": "Simpalm",
   "job_title": "CTO",
   "profile_image": "https://...",
@@ -89,7 +90,7 @@ POST /functions/v1/register
 | 201 | `{ success: true, message }` | Account created — status and message only, no session or profile |
 | 403 | `{ success: false, email_in_stack: false, message }` | Email is not on the attendee list — nothing was created |
 | 409 | `{ success: false, email_in_stack: true, message }` | Already registered → send them to login |
-| 400 | `{ success: false, message }` | Missing/invalid field, password under 8 chars, or a bad `guild_id` / `user_type_config_id` |
+| 400 | `{ success: false, message }` | Missing/invalid field, password under 8 chars, no guilds or more than 3, or a bad `guild_ids` / `user_type_config_id` |
 
 Registration returns no data of its own. The account is created already
 confirmed, so call `login` straight after a 201 to get the token and the
@@ -155,14 +156,19 @@ Authorization: Bearer <user token>
 ```
 
 Both use the `{ status, message, data }` envelope, and both answer with the same
-`data`: the profile columns, `nerd_number`, `guild` and `user_type` as
-`{ id, name, description }` objects, plus `total_xp` and `rank` from
+`data`: the profile columns, `nerd_number`, `user_type` as `{ id, name, description }`,
+the `guilds` array (1 to 3 of the same shape), plus `total_xp` and `rank` from
 `public.leaderboard` (0 / null for a user with no completed missions).
 
-Editable by PUT: `first_name`, `last_name`, `user_type_config_id`, `guild_id`,
+Editable by PUT: `first_name`, `last_name`, `user_type_config_id`, `guild_ids`,
 `company_name`, `job_title`, `profile_image`. Absent fields are left alone, `null`
 clears an optional one, and anything else in the body (`nerd_number`, `email`,
 `is_admin`) is ignored rather than rejected.
+
+`guild_ids` replaces the whole selection and has to be 1 to 3 existing guild ids —
+it cannot be cleared. In JSON send an array; in a form repeat the key
+(`guild_ids=2`, `guild_ids=3`) or send `guild_ids=2,3`. The swap runs inside
+`public.set_user_guilds()`, so it is atomic and the 1..3 rule cannot be dodged.
 
 `profile_image` takes a `multipart/form-data` file part, a `data:` URI, an https
 URL, or `null`. Uploads land in the `profile-images` storage bucket under
@@ -259,7 +265,7 @@ export B=http://127.0.0.1:54321
 # register
 curl -i -X POST "$B/functions/v1/register" \
   -H "apikey: $ANON" -H "Content-Type: application/json" \
-  -d '{"email":"you@example.com","password":"Passw0rd!23","first_name":"Test","last_name":"User"}'
+  -d '{"email":"you@example.com","password":"Passw0rd!23","first_name":"Test","last_name":"User","guild_ids":[1,2]}'
 
 # login
 curl -i -X POST "$B/functions/v1/login" \
@@ -278,7 +284,8 @@ curl -i "$B/functions/v1/user/profile" \
 # update it, picture included
 curl -i -X PUT "$B/functions/v1/user/profile" \
   -H "apikey: $ANON" -H "Authorization: Bearer $TOKEN" \
-  -F "job_title=CTO" -F "guild_id=2" -F "profile_image=@/path/to/photo.jpg"
+  -F "job_title=CTO" -F "guild_ids=2" -F "guild_ids=3" \
+  -F "profile_image=@/path/to/photo.jpg"
 ```
 
 Function logs (`console.error`) stream in the `supabase functions serve`

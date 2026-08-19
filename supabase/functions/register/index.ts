@@ -1,6 +1,7 @@
 // POST auth/register
 //   { "email": "...", "password": "...", "first_name": "...", "last_name": "...",
-//     optional: user_type_config_id, guild_id, company_name, job_title,
+//     "guild_ids": [1, 2],
+//     optional: user_type_config_id, company_name, job_title,
 //               profile_image, device_type, device_token }
 //
 // Registration is invite-only: the email must already be on the pre-approved
@@ -14,6 +15,7 @@
 // A successful registration answers with the status and message only — no session
 // and no profile row. The client sends the user to login afterwards.
 import { guardPost, integer, json, readJson, text } from "../_shared/http.ts";
+import { findUnknownGuild, readGuildIds, setGuilds } from "../_shared/profile.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -48,6 +50,19 @@ Deno.serve(async (req) => {
     }, 400);
   }
 
+  // Guilds are part of signing up: an attendee picks 1 to 3. `guild_id` is still
+  // read as a one-guild selection so an older client keeps working.
+  const guilds = readGuildIds(body.guild_ids ?? body.guild_id);
+  if (guilds === null) {
+    return json({
+      success: false,
+      message: "guild_ids is required — pick between 1 and 3 guilds.",
+    }, 400);
+  }
+  if ("error" in guilds) {
+    return json({ success: false, message: guilds.error }, 400);
+  }
+
   const service = serviceClient();
 
   try {
@@ -71,7 +86,17 @@ Deno.serve(async (req) => {
       }, 403);
     }
 
-    // Step 2 — create the auth account. The email came off the vetted invite
+    // Step 2 — every guild id has to exist. Checked before the account is
+    // created, so a typo does not leave an auth user behind to clean up.
+    const unknownGuild = await findUnknownGuild(guilds.ids);
+    if (unknownGuild !== null) {
+      return json({
+        success: false,
+        message: `Guild ${unknownGuild} does not exist. Fetch the list from GET config/guilds.`,
+      }, 400);
+    }
+
+    // Step 3 — create the auth account. The email came off the vetted invite
     // list, so it is confirmed up front and the user can sign in immediately.
     const { data: created, error: createError } = await service.auth.admin
       .createUser({
@@ -97,7 +122,7 @@ Deno.serve(async (req) => {
       }, 400);
     }
 
-    // Step 3 — the profile row. public.users has no insert policy, so this only
+    // Step 4 — the profile row. public.users has no insert policy, so this only
     // works through the service role. Nothing is selected back: the response
     // carries no profile, and login returns it on the next call.
     const { error: profileError } = await service
@@ -108,7 +133,6 @@ Deno.serve(async (req) => {
         last_name: lastName,
         email,
         user_type_config_id: integer(body.user_type_config_id),
-        guild_id: integer(body.guild_id),
         company_name: text(body.company_name),
         job_title: text(body.job_title),
         profile_image: text(body.profile_image),
@@ -125,6 +149,16 @@ Deno.serve(async (req) => {
         success: false,
         message: "Could not save the profile. Please check the details and try again.",
       }, 400);
+    }
+
+    // Step 5 — the guild selection, in its own table. Applied in one transaction
+    // by the RPC; if it will not take, the account is rolled back rather than
+    // left without the guilds the user chose.
+    const guildError = await setGuilds(created.user.id, guilds.ids);
+    if (guildError) {
+      // Deleting the auth user cascades to public.users, so this undoes both.
+      await service.auth.admin.deleteUser(created.user.id);
+      return json({ success: false, message: guildError.error }, 400);
     }
 
     // The account and profile both exist now. No session is created here, so the

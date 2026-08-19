@@ -34,5 +34,4 @@ export function serviceClient(): SupabaseClient {
   );
 }
 
-export const USER_PROFILE_COLUMNS =
-  "id, first_name, last_name, email, nerd_number, user_type_config_id, guild_id, company_name, job_title, profile_image, device_type, device_token, is_admin, created_at, updated_at";
+// The profile shape every endpoint returns lives in ./profile.ts.

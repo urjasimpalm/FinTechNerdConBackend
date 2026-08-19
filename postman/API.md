@@ -110,8 +110,8 @@ POST /functions/v1/register
 | `password` | string | yes | Min 8 characters |
 | `first_name` | string | yes | Non-empty |
 | `last_name` | string | yes | Non-empty |
+| `guild_ids` | integer[] | **yes** | 1 to 3 `guilds.id` values, e.g. `[1, 4]`. `guild_id` (a single id) is still accepted as a one-guild selection |
 | `user_type_config_id` | integer | no | `configs.id` where `type = 'user_type'` (Builder / Operator / Explorer) |
-| `guild_id` | integer | no | `guilds.id` |
 | `company_name` | string | no | |
 | `job_title` | string | no | |
 | `profile_image` | string | no | URL |
@@ -134,8 +134,12 @@ Success carries the status and message only — no token, no session, no profile
 | 201 | above | Go to login and sign in with the same credentials |
 | 403 | `{ "success": false, "email_in_stack": false, "message": "This email is not on the attendee list." }` | Show "not on the list"; nothing was created |
 | 409 | `{ "success": false, "email_in_stack": true, "message": "An account with this email already exists." }` | Send them to login |
-| 400 | `{ "success": false, "message": "..." }` | Show the message (missing field, short password, bad `guild_id`/`user_type_config_id`) |
+| 400 | `{ "success": false, "message": "..." }` | Show the message (missing field, short password, no guilds or more than 3, bad `guild_ids`/`user_type_config_id`) |
 | 500 | `{ "success": false, "message": "Something went wrong. Please try again." }` | Generic retry |
+
+Guilds are picked at sign-up: **at least 1, at most 3**. Sending none is a 400
+(`guild_ids is required — pick between 1 and 3 guilds.`), and so is sending four.
+Nothing is created when the selection is rejected.
 
 The badge number is assigned here: every new profile gets the next `nerd_number`
 in registration order (`"00427"`), which nothing can change afterwards. Read it
@@ -164,7 +168,8 @@ POST /functions/v1/login
 | 405 | `{ "success": false, "message": "Method not allowed." }` — must be POST |
 
 `data.user` is the full `public.users` profile row — this is where the client
-picks it up after registering. Wrong password and unknown email
+picks it up after registering — with `user_type` and the `guilds` array embedded,
+the same as `GET user/profile`. Wrong password and unknown email
 both return the same 401 on purpose, so no one can probe which emails have
 accounts — don't try to distinguish them in the UI.
 
@@ -333,8 +338,13 @@ Common codes: `23503` foreign key, `23505` duplicate, `42501` RLS/permission den
 ## 4. Profile and attendee directory
 
 Table `users`. Columns: `id`, `first_name`, `last_name`, `email`, `nerd_number`,
-`user_type_config_id`, `guild_id`, `company_name`, `job_title`, `profile_image`,
+`user_type_config_id`, `company_name`, `job_title`, `profile_image`,
 `device_type`, `device_token`, `is_admin`, `created_at`, `updated_at`.
+
+Guilds are **many-to-many** through `user_guilds (user_id, guild_id)` — a user
+belongs to 1 to 3 of them, and the old `users.guild_id` column was dropped, so
+don't reference it. The selection is only writable through `register` and
+`PUT user/profile`, which is what keeps the 1..3 rule true.
 
 Rows are created only by `register`. Every signed-in user can read the whole
 directory, but can update and delete only their own row.
@@ -368,11 +378,14 @@ leaderboard. Uses the `{ status, message, data }` envelope.
     "job_title": "CTO",
     "profile_image": "https://<project>.supabase.co/storage/v1/object/public/profile-images/032b5171-.../1787184000000.jpg",
     "user_type_config_id": 1,
-    "guild_id": 2,
+    "is_admin": false,
     "created_at": "2026-08-14T16:23:09.433673+00:00",
     "updated_at": "2026-08-20T09:02:11.120044+00:00",
     "user_type": { "id": 1, "name": "Builder", "description": "I create products, tools, and systems." },
-    "guild": { "id": 2, "name": "Banking", "description": null },
+    "guilds": [
+      { "id": 2, "name": "Banking", "description": null },
+      { "id": 3, "name": "Payments", "description": null }
+    ],
     "total_xp": 150,
     "rank": 3
   }
@@ -381,7 +394,8 @@ leaderboard. Uses the `{ status, message, data }` envelope.
 
 | Field | Notes |
 | --- | --- |
-| `user_type`, `guild` | `{ id, name, description }`, or `null` when the user has not picked one. The raw `user_type_config_id` / `guild_id` are alongside them, so the edit form can prefill without unwrapping |
+| `guilds` | The user's 1 to 3 guilds as `{ id, name, description }`, ordered by id. Map to ids for the edit form: `data.guilds.map(g => g.id)` |
+| `user_type` | `{ id, name, description }`, or `null` when the user has not picked one. The raw `user_type_config_id` is alongside it, so the edit form can prefill without unwrapping |
 | `profile_image` | Full public URL, or `null`. Renderable as-is — no signing |
 | `total_xp` | Points from completed missions. `0` for a user who has completed none |
 | `rank` | Leaderboard position, or `null` while `total_xp` is 0 — the leaderboard only ranks users with a completed mission |
@@ -400,13 +414,20 @@ PUT /functions/v1/user/profile
 Authorization: Bearer <token>
 ```
 
-Editable: `first_name`, `last_name`, `user_type_config_id`, `guild_id`,
+Editable: `first_name`, `last_name`, `user_type_config_id`, `guild_ids`,
 `company_name`, `job_title`, `profile_image`. Everything else in the body is
 ignored, so a client can send a whole profile object back untouched.
 
 **Partial by design.** A field you leave out is left alone; send `null` to clear
-an optional one (`user_type_config_id`, `guild_id`, `company_name`, `job_title`,
+an optional one (`user_type_config_id`, `company_name`, `job_title`,
 `profile_image`). `first_name` and `last_name` cannot be emptied.
+
+**Guilds.** `guild_ids` replaces the whole selection and must contain 1 to 3
+existing `guilds.id` values — there is no way to clear it, because an attendee
+always belongs to at least one guild. Leave the key out to keep the current
+selection. Duplicates collapse, so `[2, 2, 3]` is a two-guild selection, and a
+single `guild_id` is still accepted as a one-guild alias. The replacement is
+applied in one transaction, so a rejected selection leaves the old one intact.
 
 The response body is the same shape as `GET user/profile`, with
 `message: "Profile updated."`, so the screen can re-render from it directly.
@@ -419,7 +440,9 @@ deleted once the new one is saved.
 ```ts
 const form = new FormData();
 form.append("first_name", "Wasim");
-form.append("guild_id", "2");
+// A form cannot carry an array: repeat the key, or send "2,3" in one value.
+form.append("guild_ids", "2");
+form.append("guild_ids", "3");
 form.append("profile_image", file); // File / Blob from the picker
 
 await fetch(`${SUPABASE_URL}/functions/v1/user/profile`, {
@@ -430,7 +453,9 @@ await fetch(`${SUPABASE_URL}/functions/v1/user/profile`, {
 ```
 
 In a multipart form there is no `null`, so an empty value (or the literal
-`"null"`) clears a field, and an empty file part means "no change".
+`"null"`) clears a field, and an empty file part means "no change". `guild_ids`
+accepts repeated parts (`guild_ids=2`, `guild_ids=3`), one comma-separated value
+(`guild_ids=2,3`), or a JSON array as a string (`guild_ids=[2,3]`).
 
 JSON works too, with three ways to set the picture:
 
@@ -438,7 +463,7 @@ JSON works too, with three ways to set the picture:
 {
   "first_name": "Wasim",
   "job_title": "CTO",
-  "guild_id": 2,
+  "guild_ids": [2, 3],
   "user_type_config_id": 1,
   "profile_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABA..."
 }
@@ -456,12 +481,13 @@ JPEG, PNG, WebP and HEIC/HEIF are accepted, up to 5 MB.
 | Status | Body |
 | --- | --- |
 | 200 | Updated profile, same shape as GET |
-| 400 | `{ "status": "Error", "message": "...", "data": null }` — empty name, unknown `guild_id`/`user_type_config_id`, unsupported or oversized image, or nothing to update |
+| 400 | `{ "status": "Error", "message": "...", "data": null }` — empty name, fewer than 1 or more than 3 guilds, unknown `guild_ids`/`user_type_config_id`, unsupported or oversized image, or nothing to update |
 | 401 | Missing or expired token |
 | 404 | Profile row not found |
 
-Unknown ids are checked before the write, so the message names the field:
-`guild_id 99 does not exist. Fetch the list from GET config/guilds.`
+Unknown ids are checked before the write, so the message names the id:
+`Guild 99 does not exist. Fetch the list from GET config/guilds.` A bad selection
+size says so too: `Pick between 1 and 3 guilds — 4 were sent.`
 
 ### 4.3 Direct table access
 
@@ -470,29 +496,32 @@ Unknown ids are checked before the write, so the message names the field:
 | My profile | `GET /rest/v1/users?select=*&id=eq.<my-id>` |
 | Update my profile | `PATCH /rest/v1/users?id=eq.<my-id>` |
 | Directory | `GET /rest/v1/users?select=id,first_name,last_name,company_name,job_title,profile_image&limit=20` |
-| Filter by guild | `...&guild_id=eq.2` |
+| Filter by guild | `GET /rest/v1/user_guilds?select=user_id,users(id,first_name,last_name)&guild_id=eq.2` |
+| My guilds | `GET /rest/v1/user_guilds?select=guild:guilds(id,name)&user_id=eq.<my-id>` |
 | Search by name | `...&or=(first_name.ilike.*ann*,last_name.ilike.*ann*)` |
 | Delete my account | `DELETE /rest/v1/users?id=eq.<my-id>` |
 
-Updatable fields: `first_name`, `last_name`, `user_type_config_id`, `guild_id`,
+Updatable fields: `first_name`, `last_name`, `user_type_config_id`,
 `company_name`, `job_title`, `profile_image`, `device_type`, `device_token`.
 (`email` lives in auth — change it with `supabase.auth.updateUser`.) `nerd_number`
 and `is_admin` are not in that list: a PATCH carrying either is rejected with
 `42501`, so use `PUT user/profile` for profile edits and leave those two alone.
 `device_type` / `device_token` are the one pair the PUT does not cover — patch
-them here.
+them here. `user_guilds` is read-only over REST as well: the 1..3 rule is enforced
+by `public.set_user_guilds()`, which only `register` and `PUT user/profile` can
+call, so guild changes have to go through the PUT.
 
 ```ts
 const { data: { user } } = await supabase.auth.getUser();
 
 await supabase.from("users")
-  .update({ job_title: "Engineer", guild_id: 1 })
+  .update({ job_title: "Engineer" })
   .eq("id", user.id)
   .select();
 
-// directory with the guild name joined in
+// directory with each attendee's guild names joined in
 await supabase.from("users")
-  .select("id, first_name, last_name, company_name, guilds(name)")
+  .select("id, first_name, last_name, company_name, user_guilds(guild:guilds(name))")
   .limit(20);
 ```
 
