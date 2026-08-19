@@ -29,7 +29,14 @@ const ROUTES: Record<string, string> = {
   "user/list": "GET",
   "user/add": "POST",
   "user/remove": "DELETE",
+  "announcement/get": "GET",
+  "announcement/post": "POST",
 };
+
+// The announcement is a single row pinned to this id.
+const ANNOUNCEMENT_ID = 1;
+const MAX_ANNOUNCEMENT_LENGTH = 2000;
+const ANNOUNCEMENT_COLUMNS = "text, updated_by, updated_at";
 
 type Entry = { email: string; first_name: string | null; last_name: string | null };
 
@@ -231,6 +238,69 @@ async function removeUsers(entries: Entry[]): Promise<Response> {
   );
 }
 
+async function getAnnouncement(): Promise<Response> {
+  const { data, error } = await serviceClient()
+    .from("announcements")
+    .select(ANNOUNCEMENT_COLUMNS)
+    .eq("id", ANNOUNCEMENT_ID)
+    .maybeSingle();
+
+  if (error) {
+    console.error("announcement read failed", error);
+    return fail("Something went wrong. Please try again.", 500);
+  }
+
+  // The migration seeds the row, but fall back to an empty announcement rather
+  // than a 404 so the client always has something to render.
+  const announcement = data ?? { text: "", updated_by: null, updated_at: null };
+  return ok(
+    announcement.text ? "Announcement loaded." : "There is no announcement right now.",
+    announcement,
+  );
+}
+
+async function saveAnnouncement(
+  body: Record<string, unknown>,
+  adminId: string,
+): Promise<Response> {
+  // Empty is a real value — it clears the banner — so only a missing or
+  // non-string `text` is rejected. null is treated as clearing it.
+  const raw = body.text === null ? "" : body.text;
+  if (raw === undefined) {
+    return fail('"text" is required. Send an empty string to clear the announcement.', 400);
+  }
+  if (typeof raw !== "string") {
+    return fail('"text" must be a string.', 400);
+  }
+  // Trailing whitespace only would render as a blank banner rather than none.
+  const value = raw.trim();
+  if (value.length > MAX_ANNOUNCEMENT_LENGTH) {
+    return fail(
+      `Announcement must be ${MAX_ANNOUNCEMENT_LENGTH} characters or fewer.`,
+      400,
+    );
+  }
+
+  const { data, error } = await serviceClient()
+    .from("announcements")
+    .upsert(
+      { id: ANNOUNCEMENT_ID, text: value, updated_by: adminId },
+      { onConflict: "id" },
+    )
+    .select(ANNOUNCEMENT_COLUMNS)
+    .single();
+
+  if (error) {
+    console.error("announcement save failed", error);
+    return fail("Something went wrong. Please try again.", 500);
+  }
+
+  return ok(
+    value ? "Announcement saved." : "Announcement cleared.",
+    data,
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -260,10 +330,16 @@ Deno.serve(async (req) => {
   if ("response" in gate) return gate.response;
 
   try {
+    // Read-only routes first: they take no body.
     if (route === "user/list") return await listUsers(url);
+    if (route === "announcement/get") return await getAnnouncement();
 
     const body = await readJson(req);
     if (!body) return fail("A JSON body is required.", 400);
+
+    if (route === "announcement/post") {
+      return await saveAnnouncement(body, gate.caller.id);
+    }
 
     const parsed = readEntries(body);
     if ("error" in parsed) return fail(parsed.error, 400);

@@ -14,6 +14,8 @@ chat, missions, notifications — see [../../postman/API.md](../../postman/API.m
 | List attendee-list emails | `GET /functions/v1/admin/user/list` | **admin** user token |
 | Add attendee-list emails | `POST /functions/v1/admin/user/add` | **admin** user token |
 | Remove attendee-list emails | `DELETE /functions/v1/admin/user/remove` | **admin** user token |
+| Read the announcement (editor) | `GET /functions/v1/admin/announcement/get` | **admin** user token |
+| Save the announcement | `POST /functions/v1/admin/announcement/post` | **admin** user token |
 
 Base URL:
 
@@ -23,7 +25,7 @@ Base URL:
 The first six are public (no user session yet), but every request still needs the
 project's anon/publishable key in the `apikey` header. `supabase-js` adds it for
 you. `config` is documented in full in [../../postman/API.md](../../postman/API.md#5-config--reference-data),
-and the admin routes in [§10](../../postman/API.md#10-admin-attendee-list).
+and the admin routes in [§11](../../postman/API.md#11-admin-routes).
 
 `admin` is the exception: it needs a real user's access token and checks
 `public.users.is_admin`. `verify_jwt` alone would not gate it, because the anon

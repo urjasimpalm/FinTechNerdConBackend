@@ -109,6 +109,16 @@
       "key": "stack_email_2",
       "value": "postman-invited-2@example.com",
       "type": "string"
+    },
+    {
+      "key": "announcement",
+      "value": "Keynote moved to 10am.",
+      "type": "string"
+    },
+    {
+      "key": "announcement_text_before",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -2317,8 +2327,8 @@
       ]
     },
     {
-      "name": "9. Admin: attendee list",
-      "description": "Managing public.email_stack, the invite list registration is gated on. One edge function routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth → Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
+      "name": "9. Admin routes",
+      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth → Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
       "item": [
         {
           "name": "List attendee emails",
@@ -2485,6 +2495,161 @@
                   "} else {",
                   "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
                   "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get announcement (admin editor)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/announcement/get",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "announcement",
+                "get"
+              ]
+            },
+            "description": "Reads the current announcement in the admin envelope, for the editor screen. No parameters.\n\n**200**\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"Announcement loaded.\",\n  \"data\": { \"text\": \"Keynote moved to 10am.\", \"updated_by\": \"88fd8fc0-...\", \"updated_at\": \"...\" }\n}\n```\n\nWith no announcement set it still succeeds, with `text: \"\"` and the message `There is no announcement right now.`\n\nUsers read the same announcement over REST — see the **10. Announcement** folder."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('returns the announcement', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.text).to.be.a('string');",
+                  "  });",
+                  "  pm.collectionVariables.set('announcement_text_before', body.data.text);",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post announcement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/announcement/post",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "announcement",
+                "post"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"{{announcement}}\"\n}"
+            },
+            "description": "Saves the announcement, replacing whatever was there.\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| text | string | yes | Up to 2000 characters. **May be empty** — an empty string clears the banner. `null` clears it too, and the value is trimmed, so whitespace-only input also clears it |\n\n**200** `data: { text, updated_by, updated_at }`, with the message `Announcement saved.` or `Announcement cleared.` when the result is empty.\n\nOmitting `text` is a **400** (`\"text\" is required. Send an empty string to clear the announcement.`) so a client bug can't blank the banner by accident. A non-string `text` is a 400, and over 2000 characters is a 400.\n\nSet the `announcement` variable to control what gets saved; empty it to test clearing."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('saved what was sent', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.text).to.eql(String(pm.variables.get('announcement') || '').trim());",
+                  "  });",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10. Announcement",
+      "description": "The event-wide banner, as users read it: a single row in public.announcements, readable by any signed-in user. Admins edit it through **9. Admin routes**.\n\nEmpty `text` means there is no announcement — hide the banner rather than rendering an empty bar.",
+      "item": [
+        {
+          "name": "Get announcement",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/announcements?select=text,updated_at",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "announcements"
+              ],
+              "query": [
+                {
+                  "key": "select",
+                  "value": "text,updated_at"
+                }
+              ]
+            },
+            "description": "Returns an array with the single announcement row:\n\n```json\n[{ \"text\": \"Keynote moved to 10am.\", \"updated_at\": \"2026-08-19T11:00:29.927669+00:00\" }]\n```\n\nIn supabase-js, `.select('text, updated_at').single()` gives you the object directly.\n\nNeeds a session — the select policy is `to authenticated`, so without one this is a 401. Writes are rejected on this path for everyone, admins included."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('one announcement row', () => {",
+                  "  const rows = pm.response.json();",
+                  "  pm.expect(rows).to.be.an('array').with.lengthOf(1);",
+                  "  pm.expect(rows[0].text).to.be.a('string');",
+                  "});",
+                  "const text = pm.response.json()[0].text;",
+                  "console.log(text ? `Banner: ${text}` : 'No announcement set — the client should hide the banner.');"
                 ]
               }
             }

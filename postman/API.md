@@ -635,9 +635,56 @@ back in an update; send `{ read_at }` alone.
 
 ---
 
-## 10. Admin: attendee list
+## 10. Announcement
 
-Managing `public.email_stack` — the invite list that registration is gated on.
+One event-wide banner that admins edit and every signed-in user reads. Admins
+manage it through [§11.4](#114-get-adminannouncementget) and
+[§11.5](#115-post-adminannouncementpost); reading it is plain REST.
+
+| Action | Call |
+| --- | --- |
+| Read the announcement | `GET /rest/v1/announcements?select=text,updated_at` |
+
+`announcements` holds a single row pinned to `id = 1`: `text`, `updated_by`,
+`updated_at`. Signed-in users can read it and nothing more — a write on this path
+is rejected even for an admin (those go through the admin function).
+
+```json
+[{ "text": "Keynote moved to 10am.", "updated_at": "2026-08-19T11:00:29.927669+00:00" }]
+```
+
+**Empty `text` means there is no announcement** — that is how an admin clears the
+banner, so hide it rather than rendering an empty bar:
+
+```ts
+const { data } = await supabase
+  .from("announcements")
+  .select("text, updated_at")
+  .single();
+
+if (data.text) showBanner(data.text);
+```
+
+Needs a session: without one the request is a 401, since the policy grants select
+`to authenticated` only. If the banner ever has to appear on the login screen,
+that policy needs an `anon` equivalent.
+
+Live updates work here too, which suits a banner that can change mid-event:
+
+```ts
+supabase.channel("announcement")
+  .on("postgres_changes",
+      { event: "UPDATE", schema: "public", table: "announcements" },
+      ({ new: row }) => (row.text ? showBanner(row.text) : hideBanner()))
+  .subscribe();
+```
+
+## 11. Admin routes
+
+Admin-only routes, all on one function. `user/*` manages `public.email_stack` —
+the invite list registration is gated on — and `announcement/*` edits the banner
+from [§10](#10-announcement).
+
 **Admin only:** the caller needs a signed-in session whose `public.users` row has
 `is_admin = true`, sent as `Authorization: Bearer <token>` like any authenticated
 request.
@@ -647,16 +694,18 @@ request.
 | `/functions/v1/admin/user/list` | `GET` |
 | `/functions/v1/admin/user/add` | `POST` |
 | `/functions/v1/admin/user/remove` | `DELETE` |
+| `/functions/v1/admin/announcement/get` | `GET` |
+| `/functions/v1/admin/announcement/post` | `POST` |
 
-Entries here are **invitations, not accounts**: adding one lets that address
-register, removing one stops future registrations but leaves any account that
-already registered with it untouched.
+For the `user/*` routes, entries are **invitations, not accounts**: adding one
+lets that address register, removing one stops future registrations but leaves any
+account that already registered with it untouched.
 
 Addresses are trimmed and lower-cased, and matching ignores case throughout — so
 `NINA@Example.com` adds `nina@example.com`, and removing `TWO@Example.com`
 removes `two@example.com`.
 
-### 10.1 `GET admin/user/list`
+### 11.1 `GET admin/user/list`
 
 | Query parameter | Type | Default | Notes |
 | --- | --- | --- | --- |
@@ -690,7 +739,7 @@ removes `two@example.com`.
 drives the pager directly when a `search` is active. Asking for a page past the
 end is not an error — it returns an empty `users` array with the real totals.
 
-### 10.2 `POST admin/user/add`
+### 11.2 `POST admin/user/add`
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -712,7 +761,7 @@ end is not an error — it returns an empty `users` array with the real totals.
 }
 ```
 
-### 10.3 `DELETE admin/user/remove`
+### 11.3 `DELETE admin/user/remove`
 
 Same body shape as add.
 
@@ -733,7 +782,52 @@ Add and remove are both idempotent: adding an address already on the list report
 it under `already_on_list`, removing one that isn't there reports it under
 `not_found`. Neither is an error, so the UI can replay a request safely.
 
-### Errors (all three routes)
+### 11.4 `GET admin/announcement/get`
+
+Reads the current announcement in the admin envelope, for the editor screen. Takes
+no parameters.
+
+```json
+{
+  "status": "Success",
+  "message": "Announcement loaded.",
+  "data": {
+    "text": "Keynote moved to 10am.",
+    "updated_by": "88fd8fc0-be29-4331-9917-d73a5473be1b",
+    "updated_at": "2026-08-19T11:00:29.927669+00:00"
+  }
+}
+```
+
+When there is no announcement the call still succeeds, with `text: ""` and the
+message `There is no announcement right now.`
+
+Users read the same announcement over REST instead — see [§10](#10-announcement).
+
+### 11.5 `POST admin/announcement/post`
+
+Saves the announcement, replacing whatever was there.
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `text` | string | yes | Up to 2000 characters. **May be empty** — an empty string clears the banner. `null` clears it too, and the value is trimmed, so whitespace-only input also clears it |
+
+```json
+{
+  "status": "Success",
+  "message": "Announcement saved.",
+  "data": { "text": "Keynote moved to 10am.", "updated_by": "88fd8fc0-...", "updated_at": "..." }
+}
+```
+
+The message is `Announcement cleared.` when the result is empty. `updated_by` is
+set to the admin who saved it; `updated_at` is maintained by a trigger.
+
+Omitting `text` entirely is a 400 (`"text" is required. Send an empty string to
+clear the announcement.`), so a client bug can't blank the banner by accident
+while clearing it stays an explicit action. A non-string `text` is also a 400.
+
+### Errors (all routes)
 
 | Status | Body |
 | --- | --- |
@@ -741,7 +835,7 @@ it under `already_on_list`, removing one that isn't there reports it under
 | 400 | `Provide "email" or a non-empty "emails" list.` / `At most 200 emails per request.` / `page must be 1 or more.` / `per_page must be 1 or more.` |
 | 401 | `A user access token is required.` — no bearer token, or the anon key was sent instead of a user's |
 | 403 | `Admin access is required.` — signed in, but `is_admin` is false |
-| 404 | `Unknown admin route "user/whatever". Available: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove.` |
+| 404 | `Unknown admin route "user/whatever".` — the message lists every valid route |
 | 405 | `Method not allowed. Use POST for admin/user/add.` |
 
 **`is_admin` cannot be set through the API** — not even by an admin. It is
@@ -776,7 +870,7 @@ await supabase.functions.invoke("admin/user/remove", {
 New admin routes belong in this same function: it routes on the path after
 `admin/`, so `admin/<area>/<action>` costs nothing extra to deploy.
 
-## 11. Not built yet
+## 12. Not built yet
 
 These have no endpoint. The ones marked *SDK* need no backend work — call
 `supabase.auth` directly:
