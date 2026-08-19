@@ -119,6 +119,11 @@
       "key": "announcement_text_before",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "nerd_number",
+      "value": "",
+      "description": "Set by GET user/profile — the caller's badge number, e.g. 00427."
     }
   ],
   "item": [
@@ -213,7 +218,7 @@
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\",\n  \"user_type_config_id\": {{user_type_config_id}},\n  \"guild_id\": {{guild_id}},\n  \"company_name\": \"Simpalm\",\n  \"job_title\": \"Engineer\"\n}"
             },
-            "description": "| Parameter | Type | Required | Constraints |\n| --- | --- | --- | --- |\n| email | string | yes | Valid email, must be on the attendee list |\n| password | string | yes | Min 8 characters |\n| first_name | string | yes | Non-empty |\n| last_name | string | yes | Non-empty |\n| user_type_config_id | integer | no | configs.id where type = 'user_type' |\n| guild_id | integer | no | guilds.id |\n| company_name | string | no | |\n| job_title | string | no | |\n| profile_image | string | no | URL |\n| device_type | integer | no | Push delivery |\n| device_token | string | no | FCM/APNs token |\n\nResponses:\n\n- **201** — created; body is `{ success, message }` only, with no session or profile\n- **403** `email_in_stack: false` — not on the attendee list, nothing created\n- **409** — already registered, send the user to Login\n- **400** — missing/invalid field, password under 8 chars, bad guild_id/user_type_config_id\n\nRegister hands back nothing but the status and message \u2014 run Login next to get the token."
+            "description": "| Parameter | Type | Required | Constraints |\n| --- | --- | --- | --- |\n| email | string | yes | Valid email, must be on the attendee list |\n| password | string | yes | Min 8 characters |\n| first_name | string | yes | Non-empty |\n| last_name | string | yes | Non-empty |\n| user_type_config_id | integer | no | configs.id where type = 'user_type' |\n| guild_id | integer | no | guilds.id |\n| company_name | string | no | |\n| job_title | string | no | |\n| profile_image | string | no | URL |\n| device_type | integer | no | Push delivery |\n| device_token | string | no | FCM/APNs token |\n\nResponses:\n\n- **201** — created; body is `{ success, message }` only, with no session or profile\n- **403** `email_in_stack: false` — not on the attendee list, nothing created\n- **409** — already registered, send the user to Login\n- **400** — missing/invalid field, password under 8 chars, bad guild_id/user_type_config_id\n\nRegister hands back nothing but the status and message — run Login next to get the token."
           },
           "event": [
             {
@@ -754,6 +759,169 @@
       "description": "Table `users`. Rows are created only by Register. Every signed-in user can read the whole directory but update/delete only their own row.\n\nUpdatable: first_name, last_name, user_type_config_id, guild_id, company_name, job_title, profile_image, device_type, device_token. (`email` lives in auth — use `supabase.auth.updateUser`.)\n\n**A write to a row you don't own returns `200 []`, not an error** — RLS filters it out. Treat an empty array as \"not yours\".",
       "item": [
         {
+          "name": "My profile (user/profile)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "profile"
+              ]
+            },
+            "description": "Everything a profile screen needs in one call, in the { status, message, data } envelope:\n\n- the editable columns\n- `nerd_number` — the badge number, e.g. \"00427\", issued at registration and never editable\n- `guild` and `user_type` as `{ id, name, description }` (null when unset), alongside the raw ids\n- `profile_image` as a full public URL (or null)\n- `total_xp` and `rank` from the leaderboard — 0 / null until a mission is completed\n\nThe row is resolved from the bearer token, so there is no id to pass. 401 if the token is missing or expired (the anon key alone is not enough)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('envelope + profile shape', () => {",
+                  "  pm.expect(body.status).to.eql('Success');",
+                  "  pm.expect(body.data.id).to.eql(pm.variables.get('user_id'));",
+                  "  pm.expect(body.data.nerd_number).to.match(/^\\d{5,}$/);",
+                  "  pm.expect(body.data).to.have.property('total_xp');",
+                  "  pm.expect(body.data).to.have.property('rank');",
+                  "});",
+                  "if (body.data && body.data.nerd_number) {",
+                  "  pm.collectionVariables.set('nerd_number', body.data.nerd_number);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update my profile (user/profile)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "profile"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\",\n  \"job_title\": \"CTO\",\n  \"company_name\": \"Simpalm\",\n  \"guild_id\": {{guild_id}},\n  \"user_type_config_id\": {{user_type_config_id}}\n}"
+            },
+            "description": "Partial update. Editable: first_name, last_name, user_type_config_id, guild_id, company_name, job_title, profile_image.\n\n- a field you leave out is unchanged\n- `null` clears an optional field (ids, company_name, job_title, profile_image)\n- first_name / last_name cannot be emptied\n- nerd_number, email and is_admin are ignored if sent\n\nThe response is the same shape as GET user/profile, so the screen can re-render from it.\n\nFor `profile_image` you can send a data URI here (data:image/jpeg;base64,…), an https URL, or null — or use the multipart request below to upload a file."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('updated profile returned', () => {",
+                  "  pm.expect(body.status).to.eql('Success');",
+                  "  pm.expect(body.message).to.eql('Profile updated.');",
+                  "  pm.expect(body.data.job_title).to.eql('CTO');",
+                  "  pm.expect(body.data.guild.id).to.eql(Number(pm.variables.get('guild_id')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update my profile with a picture (multipart)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "profile"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "profile_image",
+                  "type": "file",
+                  "src": [],
+                  "description": "Pick a JPEG/PNG/WebP/HEIC under 5 MB. Stored in the profile-images bucket under <user-id>/<timestamp>.<ext>; the saved value is its public URL, and the previous upload is deleted."
+                },
+                {
+                  "key": "job_title",
+                  "value": "CTO",
+                  "type": "text"
+                },
+                {
+                  "key": "guild_id",
+                  "value": "{{guild_id}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Same endpoint, multipart/form-data — this is how a picked image is uploaded. Do not set Content-Type by hand; Postman adds the boundary.\n\nIn a form there is no null, so an empty value (or the literal \"null\") clears a field, and an empty file part means \"no change\".\n\nSelect a file for `profile_image` before sending — the collection ships with none attached."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('picture stored and URL saved', () => {",
+                  "    pm.expect(body.data.profile_image).to.include('/storage/v1/object/public/profile-images/');",
+                  "  });",
+                  "} else {",
+                  "  console.log('Attach an image file to profile_image first:', body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "My profile",
           "request": {
             "method": "GET",
@@ -784,7 +952,7 @@
                 }
               ]
             },
-            "description": "Returns an array with one row. Columns: id, first_name, last_name, email, user_type_config_id, guild_id, company_name, job_title, profile_image, device_type, device_token, created_at, updated_at."
+            "description": "Direct table read. Returns an array with one row. Columns: id, first_name, last_name, email, nerd_number, user_type_config_id, guild_id, company_name, job_title, profile_image, device_type, device_token, is_admin, created_at, updated_at.\n\nPrefer GET user/profile above for a profile screen: it joins in guild / user_type and adds total_xp and rank."
           },
           "event": [
             {
@@ -842,7 +1010,7 @@
               "mode": "raw",
               "raw": "{\n  \"job_title\": \"Engineer\",\n  \"company_name\": \"Simpalm\",\n  \"guild_id\": {{guild_id}},\n  \"user_type_config_id\": {{user_type_config_id}}\n}"
             },
-            "description": "Send only the fields you are changing. `Prefer: return=representation` returns the updated row (this is what supabase-js does when you chain `.select()`).\n\nRegister a push token by patching `device_type` and `device_token` here after login."
+            "description": "Direct table write, for the two fields PUT user/profile does not cover: `device_type` and `device_token` (push registration after login).\n\nSend only the fields you are changing. `Prefer: return=representation` returns the updated row (this is what supabase-js does when you chain `.select()`).\n\n`nerd_number` and `is_admin` are not in the column-level UPDATE grants, so a PATCH carrying either fails with 42501."
           },
           "event": [
             {

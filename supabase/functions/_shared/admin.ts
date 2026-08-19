@@ -1,7 +1,8 @@
+import { type Caller, requireUser } from "./auth.ts";
 import { fail } from "./http.ts";
 import { serviceClient } from "./supabase.ts";
 
-export type AdminCaller = { id: string; email: string | null };
+export type AdminCaller = Caller;
 
 /**
  * Resolves the caller from the Authorization header and requires public.users
@@ -11,30 +12,19 @@ export type AdminCaller = { id: string; email: string | null };
  *
  * Note `verify_jwt` in config.toml is not enough on its own: the project's anon
  * key is itself a valid JWT, so the gateway would let an anonymous caller
- * through. The is_admin lookup below is what actually gates these endpoints.
+ * through. requireUser plus the is_admin lookup below is what actually gates
+ * these endpoints.
  */
 export async function requireAdmin(
   req: Request,
 ): Promise<{ caller: AdminCaller } | { response: Response }> {
-  const header = req.headers.get("Authorization");
-  const token = header?.replace(/^Bearer\s+/i, "").trim();
-  if (!token) {
-    return { response: fail("A user access token is required.", 401) };
-  }
+  const signedIn = await requireUser(req);
+  if ("response" in signedIn) return signedIn;
 
-  const service = serviceClient();
-
-  // Validates the signature and expiry, and rejects the anon key (it carries no
-  // user).
-  const { data: userResult, error: userError } = await service.auth.getUser(token);
-  if (userError || !userResult.user) {
-    return { response: fail("Your session is invalid or has expired.", 401) };
-  }
-
-  const { data: profile, error: profileError } = await service
+  const { data: profile, error: profileError } = await serviceClient()
     .from("users")
     .select("is_admin")
-    .eq("id", userResult.user.id)
+    .eq("id", signedIn.caller.id)
     .maybeSingle();
 
   if (profileError) {
@@ -50,7 +40,5 @@ export async function requireAdmin(
     return { response: fail("Admin access is required.", 403) };
   }
 
-  return {
-    caller: { id: userResult.user.id, email: userResult.user.email ?? null },
-  };
+  return signedIn;
 }

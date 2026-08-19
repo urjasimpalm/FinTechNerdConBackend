@@ -10,7 +10,7 @@ then run **1. Auth → Login** — it stores the token for every other request.
 
 The backend has two kinds of endpoint:
 
-- **Edge functions** (`/functions/v1/...`) — custom logic. Right now: register and login.
+- **Edge functions** (`/functions/v1/...`) — custom logic: auth (register, login, password reset), `config`, `user/profile` and the admin routes.
 - **Auto-generated REST** (`/rest/v1/...`) — direct table access, guarded by
   row-level security so a signed-in user can only ever reach their own data.
   Everything after login (profile, agenda, chat, missions, notifications) uses this.
@@ -136,6 +136,10 @@ Success carries the status and message only — no token, no session, no profile
 | 409 | `{ "success": false, "email_in_stack": true, "message": "An account with this email already exists." }` | Send them to login |
 | 400 | `{ "success": false, "message": "..." }` | Show the message (missing field, short password, bad `guild_id`/`user_type_config_id`) |
 | 500 | `{ "success": false, "message": "Something went wrong. Please try again." }` | Generic retry |
+
+The badge number is assigned here: every new profile gets the next `nerd_number`
+in registration order (`"00427"`), which nothing can change afterwards. Read it
+back from `GET user/profile` or login's `data.user`.
 
 The account is created already confirmed, so **call login right after a 201** to
 get the token and the profile row. The two failure cases still carry
@@ -328,12 +332,138 @@ Common codes: `23503` foreign key, `23505` duplicate, `42501` RLS/permission den
 
 ## 4. Profile and attendee directory
 
-Table `users`. Columns: `id`, `first_name`, `last_name`, `email`,
+Table `users`. Columns: `id`, `first_name`, `last_name`, `email`, `nerd_number`,
 `user_type_config_id`, `guild_id`, `company_name`, `job_title`, `profile_image`,
-`device_type`, `device_token`, `created_at`, `updated_at`.
+`device_type`, `device_token`, `is_admin`, `created_at`, `updated_at`.
 
 Rows are created only by `register`. Every signed-in user can read the whole
 directory, but can update and delete only their own row.
+
+`nerd_number` is the attendee's badge number — zero-padded to five digits
+(`"00427"`), issued in registration order, unique, and **not editable by anyone**,
+including through the endpoints below.
+
+### 4.1 `GET user/profile` — my profile
+
+```
+GET /functions/v1/user/profile
+Authorization: Bearer <token>
+```
+
+Everything a profile screen needs in one call: the editable fields, the badge
+number, the guild and user type as objects, and the caller's standing on the
+leaderboard. Uses the `{ status, message, data }` envelope.
+
+```json
+{
+  "status": "Success",
+  "message": "Profile loaded.",
+  "data": {
+    "id": "032b5171-0456-4db4-ab1e-571a77e15286",
+    "first_name": "Wasim",
+    "last_name": "Raza",
+    "email": "wasim@simpalm.com",
+    "nerd_number": "00427",
+    "company_name": "Simpalm",
+    "job_title": "CTO",
+    "profile_image": "https://<project>.supabase.co/storage/v1/object/public/profile-images/032b5171-.../1787184000000.jpg",
+    "user_type_config_id": 1,
+    "guild_id": 2,
+    "created_at": "2026-08-14T16:23:09.433673+00:00",
+    "updated_at": "2026-08-20T09:02:11.120044+00:00",
+    "user_type": { "id": 1, "name": "Builder", "description": "I create products, tools, and systems." },
+    "guild": { "id": 2, "name": "Banking", "description": null },
+    "total_xp": 150,
+    "rank": 3
+  }
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `user_type`, `guild` | `{ id, name, description }`, or `null` when the user has not picked one. The raw `user_type_config_id` / `guild_id` are alongside them, so the edit form can prefill without unwrapping |
+| `profile_image` | Full public URL, or `null`. Renderable as-is — no signing |
+| `total_xp` | Points from completed missions. `0` for a user who has completed none |
+| `rank` | Leaderboard position, or `null` while `total_xp` is 0 — the leaderboard only ranks users with a completed mission |
+
+| Status | Body |
+| --- | --- |
+| 200 | above |
+| 401 | `{ "status": "Error", "message": "A user access token is required.", "data": null }` — or "Your session is invalid or has expired." The anon key alone is not enough |
+| 404 | `{ "status": "Error", "message": "Your profile could not be found.", "data": null }` |
+| 405 | `{ "status": "Error", "message": "Method not allowed. Use GET or PUT for user/profile.", "data": null }` |
+
+### 4.2 `PUT user/profile` — update my profile
+
+```
+PUT /functions/v1/user/profile
+Authorization: Bearer <token>
+```
+
+Editable: `first_name`, `last_name`, `user_type_config_id`, `guild_id`,
+`company_name`, `job_title`, `profile_image`. Everything else in the body is
+ignored, so a client can send a whole profile object back untouched.
+
+**Partial by design.** A field you leave out is left alone; send `null` to clear
+an optional one (`user_type_config_id`, `guild_id`, `company_name`, `job_title`,
+`profile_image`). `first_name` and `last_name` cannot be emptied.
+
+The response body is the same shape as `GET user/profile`, with
+`message: "Profile updated."`, so the screen can re-render from it directly.
+
+**Uploading a picture.** Send the file as `multipart/form-data` under
+`profile_image` and it is stored in the `profile-images` bucket under the caller's
+own folder; the saved `profile_image` is its public URL. The previous upload is
+deleted once the new one is saved.
+
+```ts
+const form = new FormData();
+form.append("first_name", "Wasim");
+form.append("guild_id", "2");
+form.append("profile_image", file); // File / Blob from the picker
+
+await fetch(`${SUPABASE_URL}/functions/v1/user/profile`, {
+  method: "PUT",
+  headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+  body: form, // no Content-Type header — the browser sets the boundary
+});
+```
+
+In a multipart form there is no `null`, so an empty value (or the literal
+`"null"`) clears a field, and an empty file part means "no change".
+
+JSON works too, with three ways to set the picture:
+
+```json
+{
+  "first_name": "Wasim",
+  "job_title": "CTO",
+  "guild_id": 2,
+  "user_type_config_id": 1,
+  "profile_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABA..."
+}
+```
+
+| `profile_image` value | Effect |
+| --- | --- |
+| A file part (multipart) | Uploaded to storage, URL saved |
+| `data:image/jpeg;base64,…` | Decoded, uploaded to storage, URL saved |
+| `https://…` | Saved as-is, for an image already hosted elsewhere |
+| `null` | Picture removed (and the stored file deleted) |
+
+JPEG, PNG, WebP and HEIC/HEIF are accepted, up to 5 MB.
+
+| Status | Body |
+| --- | --- |
+| 200 | Updated profile, same shape as GET |
+| 400 | `{ "status": "Error", "message": "...", "data": null }` — empty name, unknown `guild_id`/`user_type_config_id`, unsupported or oversized image, or nothing to update |
+| 401 | Missing or expired token |
+| 404 | Profile row not found |
+
+Unknown ids are checked before the write, so the message names the field:
+`guild_id 99 does not exist. Fetch the list from GET config/guilds.`
+
+### 4.3 Direct table access
 
 | Action | Call |
 | --- | --- |
@@ -346,7 +476,11 @@ directory, but can update and delete only their own row.
 
 Updatable fields: `first_name`, `last_name`, `user_type_config_id`, `guild_id`,
 `company_name`, `job_title`, `profile_image`, `device_type`, `device_token`.
-(`email` lives in auth — change it with `supabase.auth.updateUser`.)
+(`email` lives in auth — change it with `supabase.auth.updateUser`.) `nerd_number`
+and `is_admin` are not in that list: a PATCH carrying either is rejected with
+`42501`, so use `PUT user/profile` for profile edits and leave those two alone.
+`device_type` / `device_token` are the one pair the PUT does not cover — patch
+them here.
 
 ```ts
 const { data: { user } } = await supabase.auth.getUser();
@@ -492,6 +626,8 @@ await supabase.from("user_missions").upsert({
 ```
 
 `leaderboard` is a view of completed missions: `user_id`, `total_points`, `rank`.
+The caller's own row is also returned by `GET user/profile` as `total_xp` / `rank`,
+so a profile screen does not need this call.
 It shows every attendee (not just you), and `users(...)` can be embedded for names.
 `points_awarded` is set by the client, so it is only as trustworthy as the app.
 
@@ -870,5 +1006,5 @@ These have no endpoint. The ones marked *SDK* need no backend work — call
 | Forgot / reset password | Built — see [§2.4](#24-forgot-password) and [§2.5](#25-reset-password). Still needs the recovery template set on the hosted project, and custom SMTP for real volume |
 | Verify email | Not wired up — `register` auto-confirms accounts, since the email was already vetted against the attendee list |
 | Delete account | Partly — `DELETE /rest/v1/users?id=eq.<my-id>` removes the profile, but the `auth.users` row survives, so the email cannot be re-registered. Needs an edge function to do both |
-| Profile image upload | No storage bucket yet; `users.profile_image` is just a URL |
+| Profile image upload | Built — `PUT user/profile` uploads to the `profile-images` bucket, see [§4.2](#42-put-userprofile--update-my-profile) |
 | Sending push notifications | Rows can be inserted into `notifications` server-side, but nothing delivers to FCM/APNs yet |

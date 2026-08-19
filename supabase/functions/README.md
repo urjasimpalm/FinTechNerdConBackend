@@ -11,6 +11,8 @@ chat, missions, notifications — see [../../postman/API.md](../../postman/API.m
 | Email a password reset code | `POST /functions/v1/forgot-password` | anon key |
 | Set a new password with that code | `POST /functions/v1/reset-password` | anon key |
 | Lookup lists (guilds, user types, days, stages) | `GET /functions/v1/config` | anon key |
+| My profile | `GET /functions/v1/user/profile` | user token |
+| Update my profile (incl. picture upload) | `PUT /functions/v1/user/profile` | user token |
 | List attendee-list emails | `GET /functions/v1/admin/user/list` | **admin** user token |
 | Add attendee-list emails | `POST /functions/v1/admin/user/add` | **admin** user token |
 | Remove attendee-list emails | `DELETE /functions/v1/admin/user/remove` | **admin** user token |
@@ -144,6 +146,33 @@ it — set for local dev via [`config.toml`](../config.toml) and
 [`templates/recovery.html`](../templates/recovery.html), and separately on the
 hosted project under Authentication → Emails → Reset Password.
 
+## 6. My profile
+
+```
+GET /functions/v1/user/profile
+PUT /functions/v1/user/profile
+Authorization: Bearer <user token>
+```
+
+Both use the `{ status, message, data }` envelope, and both answer with the same
+`data`: the profile columns, `nerd_number`, `guild` and `user_type` as
+`{ id, name, description }` objects, plus `total_xp` and `rank` from
+`public.leaderboard` (0 / null for a user with no completed missions).
+
+Editable by PUT: `first_name`, `last_name`, `user_type_config_id`, `guild_id`,
+`company_name`, `job_title`, `profile_image`. Absent fields are left alone, `null`
+clears an optional one, and anything else in the body (`nerd_number`, `email`,
+`is_admin`) is ignored rather than rejected.
+
+`profile_image` takes a `multipart/form-data` file part, a `data:` URI, an https
+URL, or `null`. Uploads land in the `profile-images` storage bucket under
+`<user-id>/<timestamp>.<ext>` and the saved value is the public URL; the previous
+upload is deleted after a successful save. JPEG/PNG/WebP/HEIC, 5 MB max.
+
+There is no id in the path or body — the row is resolved from the token, so a
+caller can only ever read or write their own profile. Full request/response
+examples are in [../../postman/API.md](../../postman/API.md#4-profile-and-attendee-directory).
+
 ---
 
 ## Calling from the front end
@@ -241,6 +270,15 @@ curl -i -X POST "$B/functions/v1/login" \
 curl -i -X POST "$B/functions/v1/verify-email" \
   -H "apikey: $ANON" -H "Content-Type: application/json" \
   -d '{"email":"you@example.com"}'
+
+# my profile (TOKEN comes from the login response above)
+curl -i "$B/functions/v1/user/profile" \
+  -H "apikey: $ANON" -H "Authorization: Bearer $TOKEN"
+
+# update it, picture included
+curl -i -X PUT "$B/functions/v1/user/profile" \
+  -H "apikey: $ANON" -H "Authorization: Bearer $TOKEN" \
+  -F "job_title=CTO" -F "guild_id=2" -F "profile_image=@/path/to/photo.jpg"
 ```
 
 Function logs (`console.error`) stream in the `supabase functions serve`
