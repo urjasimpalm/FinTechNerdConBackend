@@ -639,15 +639,58 @@ back in an update; send `{ read_at }` alone.
 
 Managing `public.email_stack` — the invite list that registration is gated on.
 **Admin only:** the caller needs a signed-in session whose `public.users` row has
-`is_admin = true`.
+`is_admin = true`, sent as `Authorization: Bearer <token>` like any authenticated
+request.
 
-```
-POST   /functions/v1/email-stack     add
-DELETE /functions/v1/email-stack     remove
+| Route | Method |
+| --- | --- |
+| `/functions/v1/admin/user/list` | `GET` |
+| `/functions/v1/admin/user/add` | `POST` |
+| `/functions/v1/admin/user/remove` | `DELETE` |
+
+Entries here are **invitations, not accounts**: adding one lets that address
+register, removing one stops future registrations but leaves any account that
+already registered with it untouched.
+
+Addresses are trimmed and lower-cased, and matching ignores case throughout — so
+`NINA@Example.com` adds `nina@example.com`, and removing `TWO@Example.com`
+removes `two@example.com`.
+
+### 10.1 `GET admin/user/list`
+
+| Query parameter | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `page` | integer | 1 | 1-based |
+| `per_page` | integer | 50 | Capped at 200 |
+| `search` | string | — | Case-insensitive substring of the email. `%` and `_` match literally, not as wildcards |
+| `limit` / `offset` | integer | — | Accepted as aliases for `per_page` / raw offset, if you prefer that style |
+
+```json
+{
+  "status": "Success",
+  "message": "7 emails on the attendee list.",
+  "data": {
+    "users": [
+      { "id": "9d1f92e1-...", "email": "ada@example.com", "first_name": "Ada", "last_name": null }
+    ],
+    "search": null,
+    "pagination": {
+      "total": 7,
+      "page": 1,
+      "per_page": 3,
+      "total_pages": 3,
+      "has_next": true,
+      "has_prev": false
+    }
+  }
+}
 ```
 
-Send the access token from login as `Authorization: Bearer <token>`, as with any
-authenticated request.
+`pagination.total` counts what the filter matched, not the whole table, so it
+drives the pager directly when a `search` is active. Asking for a page past the
+end is not an error — it returns an empty `users` array with the real totals.
+
+### 10.2 `POST admin/user/add`
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -655,12 +698,6 @@ authenticated request.
 | `emails` | array | one of the two | Up to 200 per request. Items may be plain strings, or `{ email, first_name?, last_name? }` |
 | `first_name` | string | no | Only with the single-`email` form |
 | `last_name` | string | no | Only with the single-`email` form |
-
-Addresses are trimmed and lower-cased, and matching ignores case throughout — so
-`NINA@Example.com` adds `nina@example.com`, and removing `TWO@Example.com`
-removes `two@example.com`.
-
-**Add — 200**
 
 ```json
 {
@@ -675,7 +712,9 @@ removes `two@example.com`.
 }
 ```
 
-**Remove — 200**
+### 10.3 `DELETE admin/user/remove`
+
+Same body shape as add.
 
 ```json
 {
@@ -690,45 +729,52 @@ removes `two@example.com`.
 }
 ```
 
-Both are idempotent: adding an address already on the list reports it under
-`already_on_list`, removing one that isn't there reports it under `not_found`.
-Neither is an error, so the UI can replay a request safely.
+Add and remove are both idempotent: adding an address already on the list reports
+it under `already_on_list`, removing one that isn't there reports it under
+`not_found`. Neither is an error, so the UI can replay a request safely.
+
+### Errors (all three routes)
 
 | Status | Body |
 | --- | --- |
-| 200 | as above |
 | 400 | `{ "status": "Error", "message": "\"not-an-email\" is not a valid email address.", "data": null }` — one bad address rejects the whole request, and nothing is written |
-| 400 | `Provide "email" or a non-empty "emails" list.` / `At most 200 emails per request.` |
+| 400 | `Provide "email" or a non-empty "emails" list.` / `At most 200 emails per request.` / `page must be 1 or more.` / `per_page must be 1 or more.` |
 | 401 | `A user access token is required.` — no bearer token, or the anon key was sent instead of a user's |
 | 403 | `Admin access is required.` — signed in, but `is_admin` is false |
-| 405 | `Method not allowed. Use POST to add or DELETE to remove.` |
+| 404 | `Unknown admin route "user/whatever". Available: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove.` |
+| 405 | `Method not allowed. Use POST for admin/user/add.` |
 
-Two things to know:
+**`is_admin` cannot be set through the API** — not even by an admin. It is
+writable only by the service role, so an admin cannot promote another user
+through this API. Do it in SQL:
 
-- **Removing an address does not touch an account that already registered with
-  it.** It only stops future registrations. Deleting the account is a separate
-  concern (see [§10 Not built yet](#11-not-built-yet)).
-- **`is_admin` cannot be set through the API** — not even by an admin. It is
-  writable only by the service role (Studio or SQL), so an admin cannot promote
-  another user through this API. Deliberate; see the column grants in
-  `20260818221724_users_is_admin.sql`.
+```sql
+update public.users set is_admin = true where email = 'you@yourdomain.com';
+```
 
 ```ts
+// list, paged and searchable
+const { data: page } = await supabase.functions.invoke(
+  `admin/user/list?page=1&per_page=25&search=${encodeURIComponent(term)}`,
+  { method: "GET" },
+);
+page.data.users;              // rows
+page.data.pagination;         // { total, page, per_page, total_pages, has_next, has_prev }
+
 // add
-const { data: res } = await supabase.functions.invoke("email-stack", {
+await supabase.functions.invoke("admin/user/add", {
   body: { emails: ["nina@example.com", { email: "sam@example.com", first_name: "Sam" }] },
 });
 
 // remove — invoke() needs the method spelled out
-const { data: gone } = await supabase.functions.invoke("email-stack", {
+await supabase.functions.invoke("admin/user/remove", {
   method: "DELETE",
   body: { email: "nina@example.com" },
 });
 ```
 
-There is no list endpoint yet: `email_stack` has RLS enabled with no policies, so
-an admin screen cannot read the list directly either. Worth adding a `GET` to
-this same function when that screen gets built.
+New admin routes belong in this same function: it routes on the path after
+`admin/`, so `admin/<area>/<action>` costs nothing extra to deploy.
 
 ## 11. Not built yet
 

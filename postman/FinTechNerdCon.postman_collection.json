@@ -6,28 +6,110 @@
   },
   "auth": {
     "type": "bearer",
-    "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
   },
   "variable": [
-    { "key": "base_url", "value": "http://127.0.0.1:54321", "type": "string" },
-    { "key": "anon_key", "value": "", "type": "string" },
-    { "key": "access_token", "value": "", "type": "string" },
-    { "key": "refresh_token", "value": "", "type": "string" },
-    { "key": "user_id", "value": "", "type": "string" },
-    { "key": "test_email", "value": "you@example.com", "type": "string" },
-    { "key": "test_password", "value": "Passw0rd!23", "type": "string" },
-    { "key": "other_user_id", "value": "", "type": "string" },
-    { "key": "chat_id", "value": "", "type": "string" },
-    { "key": "agenda_id", "value": "", "type": "string" },
-    { "key": "notification_id", "value": "", "type": "string" },
-    { "key": "guild_id", "value": "1", "type": "string" },
-    { "key": "mission_id", "value": "1", "type": "string" },
-    { "key": "user_type_config_id", "value": "1", "type": "string" },
-    { "key": "allow_destructive", "value": "false", "type": "string" },
-    { "key": "reset_code", "value": "", "type": "string" },
-    { "key": "new_password", "value": "NewPassw0rd!23", "type": "string" },
-    { "key": "stack_email", "value": "postman-invited@example.com", "type": "string" },
-    { "key": "stack_email_2", "value": "postman-invited-2@example.com", "type": "string" }
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:54321",
+      "type": "string"
+    },
+    {
+      "key": "anon_key",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "test_email",
+      "value": "you@example.com",
+      "type": "string"
+    },
+    {
+      "key": "test_password",
+      "value": "Passw0rd!23",
+      "type": "string"
+    },
+    {
+      "key": "other_user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "chat_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "agenda_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notification_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "guild_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "mission_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "user_type_config_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "allow_destructive",
+      "value": "false",
+      "type": "string"
+    },
+    {
+      "key": "reset_code",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "new_password",
+      "value": "NewPassw0rd!23",
+      "type": "string"
+    },
+    {
+      "key": "stack_email",
+      "value": "postman-invited@example.com",
+      "type": "string"
+    },
+    {
+      "key": "stack_email_2",
+      "value": "postman-invited-2@example.com",
+      "type": "string"
+    }
   ],
   "item": [
     {
@@ -37,16 +119,30 @@
         {
           "name": "Verify email (on attendee list?)",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/functions/v1/verify-email",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "verify-email"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "verify-email"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -78,16 +174,30 @@
         {
           "name": "Register",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/functions/v1/register",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "register"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "register"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -122,16 +232,30 @@
         {
           "name": "Login",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/functions/v1/login",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "login"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "login"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -163,16 +287,30 @@
         {
           "name": "Forgot password",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/functions/v1/forgot-password",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "forgot-password"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "forgot-password"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -205,16 +343,30 @@
         {
           "name": "Reset password",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/functions/v1/reset-password",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "reset-password"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "reset-password"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -263,17 +415,36 @@
         {
           "name": "Refresh token",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/auth/v1/token?grant_type=refresh_token",
-              "host": ["{{base_url}}"],
-              "path": ["auth", "v1", "token"],
-              "query": [{ "key": "grant_type", "value": "refresh_token" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "token"
+              ],
+              "query": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token"
+                }
+              ]
             },
             "body": {
               "mode": "raw",
@@ -303,13 +474,25 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/auth/v1/logout",
-              "host": ["{{base_url}}"],
-              "path": ["auth", "v1", "logout"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "logout"
+              ]
             },
             "description": "Revokes the session (`supabase.auth.signOut()` in the app). Returns 204.\n\nSkipped unless `allow_destructive` is `true`, so a whole-collection run doesn't end the session the later folders depend on. Send it on its own whenever you like."
           },
@@ -330,7 +513,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('documented status', () => pm.expect([204, 401]).to.include(pm.response.code));"]
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([204, 401]).to.include(pm.response.code));"
+                ]
               }
             }
           ]
@@ -344,13 +529,26 @@
         {
           "name": "All config",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/functions/v1/config",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "config"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "config"
+              ]
             },
             "description": "Every lookup list in one call:\n\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"guilds\":      [{ \"id\": 1, \"name\": \"AI & Agentic Systems\", \"description\": \"...\" }],\n    \"user_type\":   [{ \"id\": 1, \"name\": \"Builder\" }],\n    \"event-quest\": [{ \"id\": 4, \"name\": \"Main Quests\" }],\n    \"event-day\":   [{ \"id\": 8, \"name\": \"Day 0\" }],\n    \"stage-type\":  [{ \"id\": 11, \"name\": \"Stage 1\" }]\n  }\n}\n```\n\nIds are one shared sequence across all types, so always match on `type` + `id`, never `id` alone."
           },
@@ -375,13 +573,27 @@
         {
           "name": "Guilds only",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/functions/v1/config/guilds",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "config", "guilds"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "config",
+                "guilds"
+              ]
             },
             "description": "Guild rows include `description`; config rows are `{ id, name }`."
           },
@@ -401,13 +613,27 @@
         {
           "name": "One config type",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/functions/v1/config/user_type",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "config", "user_type"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "config",
+                "user_type"
+              ]
             },
             "description": "Path segment is `guilds` or any `configs.type` value: `user_type`, `event-quest`, `event-day`, `stage-type`.\n\nAn unknown segment returns **404** with the available list — a typo is surfaced rather than answered with an empty array."
           },
@@ -427,14 +653,32 @@
         {
           "name": "Several config types",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/functions/v1/config?type=event-day,stage-type",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "config"],
-              "query": [{ "key": "type", "value": "event-day,stage-type" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "config"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "event-day,stage-type"
+                }
+              ]
             },
             "description": "| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| type | string | no | Comma-separated `configs.type` values. Ignored if a path segment is given |\n\nUnlike the path form, an unknown value here returns `{\"nope\": []}` with 200 rather than 404, so one bad entry doesn't derail a multi-type request."
           },
@@ -457,13 +701,27 @@
         {
           "name": "Unknown type (404)",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/functions/v1/config/typo",
-              "host": ["{{base_url}}"],
-              "path": ["functions", "v1", "config", "typo"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "config",
+                "typo"
+              ]
             },
             "description": "Returns `{ success: false, message, available: [...] }` — handy when wiring up the client."
           },
@@ -490,14 +748,31 @@
           "name": "My profile",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/users?select=*&id=eq.{{user_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "users"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "users"
+              ],
               "query": [
-                { "key": "select", "value": "*" },
-                { "key": "id", "value": "eq.{{user_id}}" }
+                {
+                  "key": "select",
+                  "value": "*"
+                },
+                {
+                  "key": "id",
+                  "value": "eq.{{user_id}}"
+                }
               ]
             },
             "description": "Returns an array with one row. Columns: id, first_name, last_name, email, user_type_config_id, guild_id, company_name, job_title, profile_image, device_type, device_token, created_at, updated_at."
@@ -524,15 +799,35 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Prefer", "value": "return=representation" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/users?id=eq.{{user_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "users"],
-              "query": [{ "key": "id", "value": "eq.{{user_id}}" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "eq.{{user_id}}"
+                }
+              ]
             },
             "body": {
               "mode": "raw",
@@ -557,15 +852,35 @@
           "name": "Attendee directory",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/users?select=id,first_name,last_name,company_name,job_title,profile_image,guilds(name)&limit=20&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "users"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "users"
+              ],
               "query": [
-                { "key": "select", "value": "id,first_name,last_name,company_name,job_title,profile_image,guilds(name)" },
-                { "key": "limit", "value": "20" },
-                { "key": "offset", "value": "0" }
+                {
+                  "key": "select",
+                  "value": "id,first_name,last_name,company_name,job_title,profile_image,guilds(name)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
               ]
             },
             "description": "`guilds(name)` embeds the guild through the foreign key. Page with `limit` / `offset`; add the header `Prefer: count=exact` to get the total in the `Content-Range` response header."
@@ -587,14 +902,31 @@
           "name": "Directory filtered by guild",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/users?select=id,first_name,last_name,company_name&guild_id=eq.{{guild_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "users"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "users"
+              ],
               "query": [
-                { "key": "select", "value": "id,first_name,last_name,company_name" },
-                { "key": "guild_id", "value": "eq.{{guild_id}}" }
+                {
+                  "key": "select",
+                  "value": "id,first_name,last_name,company_name"
+                },
+                {
+                  "key": "guild_id",
+                  "value": "eq.{{guild_id}}"
+                }
               ]
             },
             "description": "Filter operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `in`, `is`."
@@ -604,7 +936,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -613,14 +947,31 @@
           "name": "Search attendees by name",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/users?select=id,first_name,last_name,company_name&or=(first_name.ilike.*es*,last_name.ilike.*es*)",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "users"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "users"
+              ],
               "query": [
-                { "key": "select", "value": "id,first_name,last_name,company_name" },
-                { "key": "or", "value": "(first_name.ilike.*es*,last_name.ilike.*es*)" }
+                {
+                  "key": "select",
+                  "value": "id,first_name,last_name,company_name"
+                },
+                {
+                  "key": "or",
+                  "value": "(first_name.ilike.*es*,last_name.ilike.*es*)"
+                }
               ]
             },
             "description": "`*` is the wildcard in PostgREST's `ilike` (it maps to SQL `%`). Replace `es` with the search term."
@@ -630,7 +981,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -639,12 +992,28 @@
           "name": "Delete my account (incomplete — see description)",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/users?id=eq.{{user_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "users"],
-              "query": [{ "key": "id", "value": "eq.{{user_id}}" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "eq.{{user_id}}"
+                }
+              ]
             },
             "description": "**Known gap.** This returns 204 and removes the profile row, but the `auth.users` record survives (the cascade only runs the other way), so that email can never be re-registered.\n\nDon't ship this as the delete-account button — it needs an edge function that removes both.\n\nSkipped unless `allow_destructive` is `true`, so a whole-collection run doesn't wipe your test account."
           },
@@ -665,7 +1034,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('documented status', () => pm.expect([204, 401]).to.include(pm.response.code));"]
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([204, 401]).to.include(pm.response.code));"
+                ]
               }
             }
           ]
@@ -680,14 +1051,31 @@
           "name": "Guilds",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/guilds?select=id,name,description&order=id",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "guilds"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "guilds"
+              ],
               "query": [
-                { "key": "select", "value": "id,name,description" },
-                { "key": "order", "value": "id" }
+                {
+                  "key": "select",
+                  "value": "id,name,description"
+                },
+                {
+                  "key": "order",
+                  "value": "id"
+                }
               ]
             },
             "description": "Read-only for all signed-in users."
@@ -697,7 +1085,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -706,15 +1096,35 @@
           "name": "Configs by type",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/configs?select=id,name&type=eq.user_type&order=id",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "configs"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "configs"
+              ],
               "query": [
-                { "key": "select", "value": "id,name" },
-                { "key": "type", "value": "eq.user_type" },
-                { "key": "order", "value": "id" }
+                {
+                  "key": "select",
+                  "value": "id,name"
+                },
+                {
+                  "key": "type",
+                  "value": "eq.user_type"
+                },
+                {
+                  "key": "order",
+                  "value": "id"
+                }
               ]
             },
             "description": "One table backs several lookups — always filter by `type`: `user_type`, `event-quest`, `event-day`, `stage-type` (also `maintenance`, `sponsor`)."
@@ -724,7 +1134,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -739,15 +1151,35 @@
           "name": "Mission catalog",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/missions?select=id,title,description,points&is_active=eq.true&order=id",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "missions"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "missions"
+              ],
               "query": [
-                { "key": "select", "value": "id,title,description,points" },
-                { "key": "is_active", "value": "eq.true" },
-                { "key": "order", "value": "id" }
+                {
+                  "key": "select",
+                  "value": "id,title,description,points"
+                },
+                {
+                  "key": "is_active",
+                  "value": "eq.true"
+                },
+                {
+                  "key": "order",
+                  "value": "id"
+                }
               ]
             },
             "description": "The mission catalog, read-only for all signed-in users. Columns: id, title, description, points, is_active.\n\nFilter on `is_active=eq.true` so retired missions don't show up in the app."
@@ -757,7 +1189,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -766,14 +1200,31 @@
           "name": "My mission progress",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/user_missions?select=*,missions(title,points)&order=created_at.desc",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "user_missions"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "user_missions"
+              ],
               "query": [
-                { "key": "select", "value": "*,missions(title,points)" },
-                { "key": "order", "value": "created_at.desc" }
+                {
+                  "key": "select",
+                  "value": "*,missions(title,points)"
+                },
+                {
+                  "key": "order",
+                  "value": "created_at.desc"
+                }
               ]
             },
             "description": "RLS already limits this to your own rows — no `user_id` filter needed."
@@ -783,7 +1234,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -793,15 +1246,35 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "resolution=merge-duplicates,return=representation"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/user_missions?on_conflict=user_id,mission_id",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "user_missions"],
-              "query": [{ "key": "on_conflict", "value": "user_id,mission_id" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "user_missions"
+              ],
+              "query": [
+                {
+                  "key": "on_conflict",
+                  "value": "user_id,mission_id"
+                }
+              ]
             },
             "body": {
               "mode": "raw",
@@ -814,7 +1287,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('documented status', () => pm.expect([200, 201]).to.include(pm.response.code));"]
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 201]).to.include(pm.response.code));"
+                ]
               }
             }
           ]
@@ -823,15 +1298,35 @@
           "name": "Leaderboard",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/leaderboard?select=*,users(first_name,last_name,profile_image)&order=rank.asc&limit=50",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "leaderboard"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "leaderboard"
+              ],
               "query": [
-                { "key": "select", "value": "*,users(first_name,last_name,profile_image)" },
-                { "key": "order", "value": "rank.asc" },
-                { "key": "limit", "value": "50" }
+                {
+                  "key": "select",
+                  "value": "*,users(first_name,last_name,profile_image)"
+                },
+                {
+                  "key": "order",
+                  "value": "rank.asc"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
               ]
             },
             "description": "View columns: `user_id`, `total_points`, `rank`. Counts completed missions only, across all attendees."
@@ -841,7 +1336,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -856,14 +1353,31 @@
           "name": "Full agenda",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/agenda?select=id,name,description,day,start_time,end_time,location,speaker_name,speaker_title,speaker_company,is_sponsored,status,sort_order,event_quest_config:configs!agenda_event_quest_config_id_fkey(name),agenda_guilds(guilds(name))&order=sort_order",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "agenda"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "agenda"
+              ],
               "query": [
-                { "key": "select", "value": "id,name,description,day,start_time,end_time,location,speaker_name,speaker_title,speaker_company,is_sponsored,status,sort_order,event_quest_config:configs!agenda_event_quest_config_id_fkey(name),agenda_guilds(guilds(name))" },
-                { "key": "order", "value": "sort_order" }
+                {
+                  "key": "select",
+                  "value": "id,name,description,day,start_time,end_time,location,speaker_name,speaker_title,speaker_company,is_sponsored,status,sort_order,event_quest_config:configs!agenda_event_quest_config_id_fkey(name),agenda_guilds(guilds(name))"
+                },
+                {
+                  "key": "order",
+                  "value": "sort_order"
+                }
               ]
             },
             "description": "`agenda` has three separate foreign keys to `configs` (quest, day, stage), so a bare `configs(...)` embed is ambiguous — name the constraint as shown.\n\nStores the first row's id in `agenda_id` for the requests below."
@@ -890,15 +1404,35 @@
           "name": "Agenda for one day",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/agenda?select=id,name,start_time,end_time,location&event_day_config_id=eq.8&order=sort_order",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "agenda"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "agenda"
+              ],
               "query": [
-                { "key": "select", "value": "id,name,start_time,end_time,location" },
-                { "key": "event_day_config_id", "value": "eq.8" },
-                { "key": "order", "value": "sort_order" }
+                {
+                  "key": "select",
+                  "value": "id,name,start_time,end_time,location"
+                },
+                {
+                  "key": "event_day_config_id",
+                  "value": "eq.8"
+                },
+                {
+                  "key": "order",
+                  "value": "sort_order"
+                }
               ]
             },
             "description": "`event_day_config_id` points at `configs` rows of type `event-day` (ids 8–10 = Day 0/1/2 in the seed data). `day=eq.2026-09-01` filters by calendar date instead."
@@ -908,7 +1442,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -917,15 +1453,35 @@
           "name": "Agenda by quest type",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/agenda?select=id,name,start_time&event_quest_config_id=eq.4&order=sort_order",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "agenda"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "agenda"
+              ],
               "query": [
-                { "key": "select", "value": "id,name,start_time" },
-                { "key": "event_quest_config_id", "value": "eq.4" },
-                { "key": "order", "value": "sort_order" }
+                {
+                  "key": "select",
+                  "value": "id,name,start_time"
+                },
+                {
+                  "key": "event_quest_config_id",
+                  "value": "eq.4"
+                },
+                {
+                  "key": "order",
+                  "value": "sort_order"
+                }
               ]
             },
             "description": "Quest types are `configs` rows of type `event-quest` — 4 Main Quests, 5 Side Quests, 6 Bonus Quests, 7 My Schedule in the seed data."
@@ -935,7 +1491,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -944,14 +1502,31 @@
           "name": "Agenda by guild",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/agenda_guilds?select=agenda(id,name,start_time,location)&guild_id=eq.{{guild_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "agenda_guilds"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "agenda_guilds"
+              ],
               "query": [
-                { "key": "select", "value": "agenda(id,name,start_time,location)" },
-                { "key": "guild_id", "value": "eq.{{guild_id}}" }
+                {
+                  "key": "select",
+                  "value": "agenda(id,name,start_time,location)"
+                },
+                {
+                  "key": "guild_id",
+                  "value": "eq.{{guild_id}}"
+                }
               ]
             },
             "description": "Query the join table and embed the session, since the guild filter lives there."
@@ -961,7 +1536,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -970,14 +1547,31 @@
           "name": "My schedule",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/user_agenda?select=id,day,created_at,agenda(id,name,start_time,end_time,location,speaker_name)&order=day",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "user_agenda"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "user_agenda"
+              ],
               "query": [
-                { "key": "select", "value": "id,day,created_at,agenda(id,name,start_time,end_time,location,speaker_name)" },
-                { "key": "order", "value": "day" }
+                {
+                  "key": "select",
+                  "value": "id,day,created_at,agenda(id,name,start_time,end_time,location,speaker_name)"
+                },
+                {
+                  "key": "order",
+                  "value": "day"
+                }
               ]
             },
             "description": "RLS limits this to your own bookmarks."
@@ -987,7 +1581,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -997,15 +1593,35 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "resolution=merge-duplicates,return=representation"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/user_agenda?on_conflict=user_id,agenda_id",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "user_agenda"],
-              "query": [{ "key": "on_conflict", "value": "user_id,agenda_id" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "user_agenda"
+              ],
+              "query": [
+                {
+                  "key": "on_conflict",
+                  "value": "user_id,agenda_id"
+                }
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1030,7 +1646,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('documented status', () => pm.expect([200, 201]).to.include(pm.response.code));"]
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 201]).to.include(pm.response.code));"
+                ]
               }
             }
           ]
@@ -1039,12 +1657,28 @@
           "name": "Remove session from my schedule",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/user_agenda?agenda_id=eq.{{agenda_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "user_agenda"],
-              "query": [{ "key": "agenda_id", "value": "eq.{{agenda_id}}" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "user_agenda"
+              ],
+              "query": [
+                {
+                  "key": "agenda_id",
+                  "value": "eq.{{agenda_id}}"
+                }
+              ]
             },
             "description": "Returns 204. Deleting someone else's bookmark silently affects 0 rows."
           },
@@ -1065,7 +1699,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
               }
             }
           ]
@@ -1104,14 +1740,29 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Prefer", "value": "return=minimal" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=minimal"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/chats",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "chats"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chats"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1125,14 +1776,29 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Prefer", "value": "return=minimal" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=minimal"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/chat_participants",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "chat_participants"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chat_participants"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1145,7 +1811,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('201', () => pm.response.to.have.status(201));"]
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
               }
             }
           ]
@@ -1155,14 +1823,29 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Prefer", "value": "return=minimal" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=minimal"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/chat_participants",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "chat_participants"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chat_participants"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1187,7 +1870,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('documented status', () => pm.expect([201, 409]).to.include(pm.response.code));"]
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([201, 409]).to.include(pm.response.code));"
+                ]
               }
             }
           ]
@@ -1196,14 +1881,31 @@
           "name": "My chats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/chats?select=id,is_group,created_at,chat_participants(user_id,users(first_name,last_name,profile_image)),chat_messages(body,created_at)&order=created_at.desc",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "chats"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chats"
+              ],
               "query": [
-                { "key": "select", "value": "id,is_group,created_at,chat_participants(user_id,users(first_name,last_name,profile_image)),chat_messages(body,created_at)" },
-                { "key": "order", "value": "created_at.desc" }
+                {
+                  "key": "select",
+                  "value": "id,is_group,created_at,chat_participants(user_id,users(first_name,last_name,profile_image)),chat_messages(body,created_at)"
+                },
+                {
+                  "key": "order",
+                  "value": "created_at.desc"
+                }
               ]
             },
             "description": "Only chats you participate in are visible. Embeds the other members and the messages for a chat-list preview."
@@ -1229,14 +1931,29 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Prefer", "value": "return=representation" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/chat_messages",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "chat_messages"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chat_messages"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1249,7 +1966,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('201', () => pm.response.to.have.status(201));"]
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
               }
             }
           ]
@@ -1258,16 +1977,39 @@
           "name": "Messages in a chat",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/chat_messages?select=id,body,created_at,sender:users(id,first_name,last_name,profile_image)&chat_id=eq.{{chat_id}}&order=created_at.asc&limit=50",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "chat_messages"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chat_messages"
+              ],
               "query": [
-                { "key": "select", "value": "id,body,created_at,sender:users(id,first_name,last_name,profile_image)" },
-                { "key": "chat_id", "value": "eq.{{chat_id}}" },
-                { "key": "order", "value": "created_at.asc" },
-                { "key": "limit", "value": "50" }
+                {
+                  "key": "select",
+                  "value": "id,body,created_at,sender:users(id,first_name,last_name,profile_image)"
+                },
+                {
+                  "key": "chat_id",
+                  "value": "eq.{{chat_id}}"
+                },
+                {
+                  "key": "order",
+                  "value": "created_at.asc"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
               ]
             },
             "description": "`sender:users(...)` aliases the embedded sender profile. For live updates subscribe to Realtime INSERTs on `chat_messages` filtered by `chat_id` instead of polling."
@@ -1299,16 +2041,39 @@
           "name": "List notifications",
           "request": {
             "method": "GET",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/notifications?select=*&order=created_at.desc&limit=20&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "notifications"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "notifications"
+              ],
               "query": [
-                { "key": "select", "value": "*" },
-                { "key": "order", "value": "created_at.desc" },
-                { "key": "limit", "value": "20" },
-                { "key": "offset", "value": "0" }
+                {
+                  "key": "select",
+                  "value": "*"
+                },
+                {
+                  "key": "order",
+                  "value": "created_at.desc"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
               ]
             },
             "description": "Your notifications, newest first (there's an index for exactly this). Stores the first id in `notification_id`."
@@ -1333,16 +2098,34 @@
           "request": {
             "method": "HEAD",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Prefer", "value": "count=exact" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Prefer",
+                "value": "count=exact"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/notifications?select=id&read_at=is.null",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "notifications"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "notifications"
+              ],
               "query": [
-                { "key": "select", "value": "id" },
-                { "key": "read_at", "value": "is.null" }
+                {
+                  "key": "select",
+                  "value": "id"
+                },
+                {
+                  "key": "read_at",
+                  "value": "is.null"
+                }
               ]
             },
             "description": "HEAD + `Prefer: count=exact` returns the count in the `Content-Range` header (`0-0/1`) without transferring rows. In supabase-js: `.select('id', { count: 'exact', head: true }).is('read_at', null)`.\n\nBacked by a partial index on unread rows."
@@ -1365,15 +2148,35 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Prefer", "value": "return=representation" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/notifications?id=eq.{{notification_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "notifications"],
-              "query": [{ "key": "id", "value": "eq.{{notification_id}}" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "eq.{{notification_id}}"
+                }
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1398,7 +2201,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ]
@@ -1408,15 +2213,35 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "apikey", "value": "{{anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Prefer", "value": "return=minimal" }
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=minimal"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/rest/v1/notifications?read_at=is.null",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "notifications"],
-              "query": [{ "key": "read_at", "value": "is.null" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "read_at",
+                  "value": "is.null"
+                }
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1429,7 +2254,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
               }
             }
           ]
@@ -1438,12 +2265,28 @@
           "name": "Delete a notification",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "apikey", "value": "{{anon_key}}" }],
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/rest/v1/notifications?id=eq.{{notification_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["rest", "v1", "notifications"],
-              "query": [{ "key": "id", "value": "eq.{{notification_id}}" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "eq.{{notification_id}}"
+                }
+              ]
             },
             "description": "Returns 204. Deleting a notification that isn't yours silently affects 0 rows."
           },
@@ -1464,7 +2307,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
               }
             }
           ]
@@ -1473,8 +2318,70 @@
     },
     {
       "name": "9. Admin: attendee list",
-      "description": "Managing public.email_stack, the invite list registration is gated on.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth → Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nBoth requests are idempotent — adding an address already present reports it under `already_on_list`, removing an absent one reports it under `not_found`, and neither is an error.",
+      "description": "Managing public.email_stack, the invite list registration is gated on. One edge function routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth → Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
       "item": [
+        {
+          "name": "List attendee emails",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/user/list?page=1&per_page=25",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "user",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "25"
+                }
+              ]
+            },
+            "description": "Paged, searchable view of the invite list.\n\n| Query parameter | Type | Default | Notes |\n| --- | --- | --- | --- |\n| page | integer | 1 | 1-based |\n| per_page | integer | 50 | Capped at 200 |\n| search | string | — | Case-insensitive substring of the email. `%` and `_` match literally, not as wildcards |\n| limit / offset | integer | — | Accepted as aliases, if you prefer that style |\n\n**200**\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"7 emails on the attendee list.\",\n  \"data\": {\n    \"users\": [{ \"id\": \"...\", \"email\": \"ada@example.com\", \"first_name\": \"Ada\", \"last_name\": null }],\n    \"search\": null,\n    \"pagination\": { \"total\": 7, \"page\": 1, \"per_page\": 3, \"total_pages\": 3, \"has_next\": true, \"has_prev\": false }\n  }\n}\n```\n\n`pagination.total` counts what the filter matched, so it drives the pager even with a `search` active. A page past the end is not an error — it returns an empty `users` array with the real totals."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('paged list', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.users).to.be.an('array');",
+                  "    const p = body.data.pagination;",
+                  "    pm.expect(p.total).to.be.a('number');",
+                  "    pm.expect(p.page).to.eql(1);",
+                  "    pm.expect(p.per_page).to.eql(25);",
+                  "    pm.expect(p.total_pages).to.eql(Math.ceil(p.total / p.per_page));",
+                  "    pm.expect(body.data.users.length).to.be.at.most(p.per_page);",
+                  "  });",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
         {
           "name": "Add emails to attendee list",
           "request": {
@@ -1490,21 +2397,23 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/functions/v1/email-stack",
+              "raw": "{{base_url}}/functions/v1/admin/user/add",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "functions",
                 "v1",
-                "email-stack"
+                "admin",
+                "user",
+                "add"
               ]
             },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"emails\": [\n    \"{{stack_email}}\",\n    { \"email\": \"{{stack_email_2}}\", \"first_name\": \"Sam\", \"last_name\": \"Ray\" }\n  ]\n}"
             },
-            "description": "| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | one of the two | A single address |\n| emails | array | one of the two | Up to 200. Items may be strings or `{ email, first_name?, last_name? }` |\n| first_name | string | no | Only with the single-`email` form |\n| last_name | string | no | Only with the single-`email` form |\n\nAddresses are trimmed and lower-cased; matching ignores case, so `NINA@Example.com` and `nina@example.com` are the same entry.\n\n- **200** `data: { requested, added_count, added[], already_on_list[] }`\n- **400** one invalid address rejects the whole request and nothing is written; also `Provide \"email\" or a non-empty \"emails\" list.` and `At most 200 emails per request.`\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false\n- **405** use POST to add, DELETE to remove"
+            "description": "| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | one of the two | A single address |\n| emails | array | one of the two | Up to 200. Items may be strings or `{ email, first_name?, last_name? }` |\n| first_name | string | no | Only with the single-`email` form |\n| last_name | string | no | Only with the single-`email` form |\n\nAddresses are trimmed and lower-cased; matching ignores case, so `NINA@Example.com` and `nina@example.com` are the same entry.\n\n- **200** `data: { requested, added_count, added[], already_on_list[] }`\n- **400** one invalid address rejects the whole request and nothing is written\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false\n- **404** unknown route — the message lists the valid ones\n- **405** wrong method for the route"
           },
           "event": [
             {
@@ -1517,11 +2426,10 @@
                   "if (pm.response.code === 200) {",
                   "  pm.test('reports what it did', () => {",
                   "    pm.expect(body.status).to.eql('Success');",
-                  "    pm.expect(body.data.requested).to.be.a('number');",
                   "    pm.expect(body.data.added.concat(body.data.already_on_list)).to.have.lengthOf(body.data.requested);",
                   "  });",
                   "} else {",
-                  "  console.log('email-stack add:', pm.response.code, body.message, '- log in as an admin (is_admin = true) to run this.');",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
                   "}"
                 ]
               }
@@ -1543,21 +2451,23 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/functions/v1/email-stack",
+              "raw": "{{base_url}}/functions/v1/admin/user/remove",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "functions",
                 "v1",
-                "email-stack"
+                "admin",
+                "user",
+                "remove"
               ]
             },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"emails\": [\n    \"{{stack_email}}\",\n    \"{{stack_email_2}}\"\n  ]\n}"
             },
-            "description": "Removes addresses from the invite list. Same body shape as the add request.\n\n- **200** `data: { requested, removed_count, removed[], not_found[] }`\n- **401** / **403** / **400** as for the add request\n\n**Removing an address does not delete an account that already registered with it** — it only stops future registrations.\n\nIn supabase-js the method has to be spelled out: `supabase.functions.invoke('email-stack', { method: 'DELETE', body: { email } })`."
+            "description": "Same body shape as add.\n\n- **200** `data: { requested, removed_count, removed[], not_found[] }`\n- **401** / **403** / **400** as for the add request\n\n**Removing an address does not delete an account that already registered with it** — it only stops future registrations.\n\nIn supabase-js the method has to be spelled out: `supabase.functions.invoke('admin/user/remove', { method: 'DELETE', body: { email } })`."
           },
           "event": [
             {
@@ -1573,7 +2483,7 @@
                   "    pm.expect(body.data.removed.concat(body.data.not_found)).to.have.lengthOf(body.data.requested);",
                   "  });",
                   "} else {",
-                  "  console.log('email-stack remove:', pm.response.code, body.message);",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
                   "}"
                 ]
               }

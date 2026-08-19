@@ -73,5 +73,5 @@ jobs:
         run: |
           supabase functions deploy \
             login register verify-email forgot-password reset-password config \
-            email-stack \
+            admin \
             --project-ref "$PROJECT_REF"

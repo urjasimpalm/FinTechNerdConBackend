@@ -75,8 +75,9 @@ verify_jwt = false
 [functions.config]
 verify_jwt = false
 
-# Admin-only. verify_jwt is left on so the gateway rejects requests with no JWT
-# at all, but it is not the real gate: the anon key is itself a valid JWT, so the
-# function checks public.users.is_admin for the caller.
-[functions.email-stack]
+# Admin routes (admin/user/list, admin/user/add, admin/user/remove). verify_jwt
+# is left on so the gateway rejects requests with no JWT at all, but it is not the
+# real gate: the anon key is itself a valid JWT, so the function checks
+# public.users.is_admin for the caller.
+[functions.admin]
 verify_jwt = true
