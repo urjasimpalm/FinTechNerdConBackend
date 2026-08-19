@@ -69,9 +69,13 @@ jobs:
         run: |
           supabase db push
 
+      # Named explicitly rather than deployed as a whole directory, so nothing
+      # half-finished in supabase/functions ships by accident. A new function has
+      # to be added to this list or it never reaches the project — which shows up
+      # as {"code":"NOT_FOUND","message":"Requested function was not found"}.
       - name: Deploy edge functions
         run: |
           supabase functions deploy \
             login register verify-email forgot-password reset-password config \
-            admin \
+            user admin \
             --project-ref "$PROJECT_REF"
