@@ -19,6 +19,14 @@ const GUILDS_EMBED = "user_guilds (guild:guilds (id, name, description))";
 export const PROFILE_SELECT = `${PROFILE_COLUMNS}, ${USER_TYPE_EMBED}, ${GUILDS_EMBED}`;
 
 /**
+ * What the listing endpoints return per person: the card fields, no contact
+ * details. Kept apart from PROFILE_SELECT so a column added to one profile view
+ * does not silently join every directory response.
+ */
+export const PERSON_SELECT =
+  `id, first_name, last_name, nerd_number, company_name, job_title, profile_image, user_type_config_id, ${USER_TYPE_EMBED}, ${GUILDS_EMBED}`;
+
+/**
  * What login returns: the same profile plus the push-delivery columns, which the
  * app needs to decide whether to re-register the device.
  */

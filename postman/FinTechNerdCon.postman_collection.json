@@ -129,6 +129,11 @@
       "key": "nerd_number",
       "value": "",
       "description": "Set by GET user/profile — the caller's badge number, e.g. 00427."
+    },
+    {
+      "key": "request_id",
+      "value": "",
+      "description": "Set by the connection request / list requests tests."
     }
   ],
   "item": [
@@ -636,12 +641,53 @@
               }
             }
           ]
+        },
+        {
+          "name": "Sponsors",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/config/sponsors",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "config",
+                "sponsors"
+              ]
+            },
+            "description": "Event sponsors: `{ id, name, company_name, description, profile_image }`, ordered by sort_order then name. Inactive rows are left out.\n\nNo session needed — same public, CDN-cached function as the other lookup lists, and they are also in the \"All config\" payload under `sponsors`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('sponsor list', () => {",
+                  "  pm.expect(body.success).to.eql(true);",
+                  "  pm.expect(body.data.sponsors).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "3. Profile & directory",
-      "description": "Table `users`. Rows are created only by Register. Every signed-in user can read the whole directory but update/delete only their own row.\n\nUpdatable: first_name, last_name, user_type_config_id, guild_id, company_name, job_title, profile_image, device_type, device_token. (`email` lives in auth — use `supabase.auth.updateUser`.)\n\n**A write to a row you don't own returns `200 []`, not an error** — RLS filters it out. Treat an empty array as \"not yours\".",
+      "name": "3. Profile, people & connections",
+      "description": "My profile, the attendee directory, connection requests and guild membership — all through the `user` edge function, which resolves the caller from the bearer token.\n\nRun them in order the first time: People (directory) stores `other_user_id` for the profile and connection requests.\n\nDirect REST equivalents (filtering the users table yourself) are documented in postman/API.md §4.7; only \"Delete my account\" is kept here, because no function covers it yet.",
       "item": [
         {
           "name": "My profile",
@@ -794,7 +840,7 @@
           ]
         },
         {
-          "name": "Attendee directory",
+          "name": "People (directory)",
           "request": {
             "method": "GET",
             "header": [
@@ -804,31 +850,36 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/users?select=id,first_name,last_name,company_name,job_title,profile_image,guilds(name)&limit=20&offset=0",
+              "raw": "{{base_url}}/functions/v1/user/people?search=&user_type=all&page=1&per_page=20",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "users"
+                "user",
+                "people"
               ],
               "query": [
                 {
-                  "key": "select",
-                  "value": "id,first_name,last_name,company_name,job_title,profile_image,guilds(name)"
+                  "key": "search",
+                  "value": ""
                 },
                 {
-                  "key": "limit",
+                  "key": "user_type",
+                  "value": "all"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
                   "value": "20"
-                },
-                {
-                  "key": "offset",
-                  "value": "0"
                 }
               ]
             },
-            "description": "`guilds(name)` embeds the guild through the foreign key. Page with `limit` / `offset`; add the header `Prefer: count=exact` to get the total in the `Content-Range` response header."
+            "description": "Attendee directory, paged.\n\n- `search` — one term matched against name, nerd number, company and job title (\"wasim raza\", \"00427\", \"simpalm\")\n- `user_type` — `all` for every type, or a configs.id (1 Builder, 2 Operator, 3 Explorer)\n- `guild_id` — optional, narrows to one guild\n- `page` / `per_page` — default 20, max 100\n\nEach card carries `connection.status` (none / pending_sent / pending_received / connected / rejected) so the right button can be drawn without another call. Your own row is never included."
           },
           "event": [
             {
@@ -837,14 +888,27 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200', () => pm.response.to.have.status(200));",
-                  "pm.test('returns an array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                  "const body = pm.response.json();",
+                  "pm.test('paged list of cards', () => {",
+                  "  pm.expect(body.status).to.eql('Success');",
+                  "  pm.expect(body.data.people).to.be.an('array');",
+                  "  pm.expect(body.data.pagination).to.have.property('total');",
+                  "});",
+                  "// Remember the first person, so the profile / connection requests below have a target.",
+                  "const first = (body.data.people || [])[0];",
+                  "if (first) {",
+                  "  pm.collectionVariables.set('other_user_id', first.id);",
+                  "  console.log('other_user_id =', first.id, first.first_name, first.last_name);",
+                  "} else {",
+                  "  console.log('No other attendees yet — register a second account to try the connection routes.');",
+                  "}"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Directory filtered by guild",
+          "name": "Another attendee's profile",
           "request": {
             "method": "GET",
             "header": [
@@ -854,31 +918,141 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/user_guilds?select=guild_id,users(id,first_name,last_name,company_name,job_title,profile_image)&guild_id=eq.{{guild_id}}&limit=20",
+              "raw": "{{base_url}}/functions/v1/user/profile/{{other_user_id}}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "user_guilds"
+                "user",
+                "profile",
+                "{{other_user_id}}"
+              ]
+            },
+            "description": "Same detail as My profile, plus `connection` (status + request_id) and `is_connected`.\n\n`other_user_id` is set by the People request above. Email is only returned once you are connected.\n\n400 if the id is not a uuid, 404 if there is no such attendee."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 404]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('profile + connection state', () => {",
+                  "    pm.expect(body.data.nerd_number).to.be.a('string');",
+                  "    pm.expect(body.data.connection).to.have.property('status');",
+                  "    pm.expect(body.data).to.have.property('is_connected');",
+                  "  });",
+                  "} else {",
+                  "  console.log('Run People (directory) first to set other_user_id:', body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send connection request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/connection/request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "connection",
+                "request"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{other_user_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Asks to connect. One row exists per pair, so:\n\n- 409 if you are already connected or have already asked\n- asking someone who already asked you **accepts** their request\n- a rejected pair can be asked again\n\nThe response is the pair's new state: `{ status, request_id }`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 404, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('request_id', body.data.request_id);",
+                  "  pm.test('pair has a state', () => pm.expect(body.data.status).to.be.a('string'));",
+                  "} else {",
+                  "  console.log('Request skipped:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My requests / connections",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/connection/list?status=pending&search=&page=1&per_page=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "connection",
+                "list"
               ],
               "query": [
                 {
-                  "key": "select",
-                  "value": "guild_id,users(id,first_name,last_name,company_name,job_title,profile_image)"
+                  "key": "status",
+                  "value": "pending"
                 },
                 {
-                  "key": "guild_id",
-                  "value": "eq.{{guild_id}}"
+                  "key": "search",
+                  "value": ""
                 },
                 {
-                  "key": "limit",
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
                   "value": "20"
                 }
               ]
             },
-            "description": "Guilds are many-to-many through `user_guilds`, so filtering by guild reads that table and embeds the attendee. `users.guild_id` no longer exists."
+            "description": "`status=`\n\n- `pending` (default) — requests waiting on **you**\n- `sent` — requests you sent, unanswered\n- `accepted` — your connections\n- `rejected` — answered no\n\n`search` narrows by the other person's name, company, job title or nerd number. Each row is `{ request_id, status, created_at, responded_at, user }`, where `user` is the same card as the directory."
           },
           "event": [
             {
@@ -887,10 +1061,178 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200', () => pm.response.to.have.status(200));",
-                  "pm.test('rows carry the embedded attendee', () => {",
-                  "  const rows = pm.response.json();",
-                  "  pm.expect(rows).to.be.an('array');",
-                  "  if (rows.length) pm.expect(rows[0].users).to.be.an('object');",
+                  "const body = pm.response.json();",
+                  "pm.test('paged requests', () => {",
+                  "  pm.expect(body.data.requests).to.be.an('array');",
+                  "  pm.expect(body.data.pagination).to.have.property('total');",
+                  "});",
+                  "// Pick up an inbox request so Accept / Reject below have something to answer.",
+                  "const first = (body.data.requests || [])[0];",
+                  "if (first) pm.collectionVariables.set('request_id', first.request_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Accept connection request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/connection/accept",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "connection",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{request_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Only the person who **received** a request can answer it (403 otherwise), and only while it is pending (409 if already answered).\n\n`{ \"user_id\": \"...\" }` works instead of request_id.\n\nRun \"My requests / connections\" with status=pending first — its test stores `request_id`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 403, 404, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('connected', () => pm.expect(body.data.status).to.eql('connected'));",
+                  "} else {",
+                  "  console.log('Accept skipped:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject connection request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/connection/reject",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "connection",
+                "reject"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{request_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Same rules as Accept. The row is kept as `rejected` rather than deleted, so either side can ask again later — which reopens it as pending."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 403, 404, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('rejected', () => pm.expect(body.data.status).to.eql('rejected'));",
+                  "} else {",
+                  "  console.log('Reject skipped:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Guilds with is_joined",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/guild/list?page=1&per_page=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "guild",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Every guild, flagged with `is_joined` for the caller, plus `joined_count` and `max_guilds` (3). This is what a \"my guilds\" picker renders."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('flagged guilds', () => {",
+                  "  pm.expect(body.data.guilds).to.be.an('array');",
+                  "  if (body.data.guilds.length) pm.expect(body.data.guilds[0]).to.have.property('is_joined');",
+                  "  pm.expect(body.data.max_guilds).to.eql(3);",
                   "});"
                 ]
               }
@@ -898,7 +1240,119 @@
           ]
         },
         {
-          "name": "Search attendees by name",
+          "name": "Join a guild",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/guild/join",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "guild",
+                "join"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guild_id\": {{guild_id_2}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Adds one guild to the same 1–3 selection the profile shows. 409 if you are already in it or already in 3 guilds. Answers with the guilds you belong to afterwards."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('1 to 3 guilds after joining', () => pm.expect(body.data.guilds.length).to.be.within(1, 3));",
+                  "} else {",
+                  "  console.log('Join skipped:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Leave a guild",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/guild/leave",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "guild",
+                "leave"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guild_id\": {{guild_id_2}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Removes one guild. 409 if you are not in it, or if it is your last one — an attendee always belongs to at least 1 guild."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('still at least 1 guild', () => pm.expect(body.data.guilds.length).to.be.at.least(1));",
+                  "} else {",
+                  "  console.log('Leave skipped:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Members of a guild",
           "request": {
             "method": "GET",
             "header": [
@@ -908,27 +1362,37 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/users?select=id,first_name,last_name,company_name&or=(first_name.ilike.*es*,last_name.ilike.*es*)",
+              "raw": "{{base_url}}/functions/v1/user/guild/members?guild_id={{guild_id}}&search=&page=1&per_page=20",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "users"
+                "user",
+                "guild",
+                "members"
               ],
               "query": [
                 {
-                  "key": "select",
-                  "value": "id,first_name,last_name,company_name"
+                  "key": "guild_id",
+                  "value": "{{guild_id}}"
                 },
                 {
-                  "key": "or",
-                  "value": "(first_name.ilike.*es*,last_name.ilike.*es*)"
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
                 }
               ]
             },
-            "description": "`*` is the wildcard in PostgREST's `ilike` (it maps to SQL `%`). Replace `es` with the search term."
+            "description": "`user/people` scoped to one guild: same cards, same search / user_type / paging, and it also leaves you out. `guild_id` is required."
           },
           "event": [
             {
@@ -936,7 +1400,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
+                  "pm.test('documented status', () => pm.expect([200, 400]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('paged members', () => {",
+                  "    pm.expect(body.data.people).to.be.an('array');",
+                  "    pm.expect(body.data.pagination).to.have.property('total');",
+                  "  });",
+                  "} else {",
+                  "  console.log('Members skipped:', body.message);",
+                  "}"
                 ]
               }
             }

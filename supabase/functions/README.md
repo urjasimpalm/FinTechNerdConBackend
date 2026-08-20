@@ -11,8 +11,17 @@ chat, missions, notifications — see [../../postman/API.md](../../postman/API.m
 | Email a password reset code | `POST /functions/v1/forgot-password` | anon key |
 | Set a new password with that code | `POST /functions/v1/reset-password` | anon key |
 | Lookup lists (guilds, user types, days, stages) | `GET /functions/v1/config` | anon key |
+| Lookup lists incl. sponsors | `GET /functions/v1/config/sponsors` | anon key |
 | My profile | `GET /functions/v1/user/profile` | user token |
 | Update my profile (incl. picture upload) | `PUT /functions/v1/user/profile` | user token |
+| Another attendee's profile | `GET /functions/v1/user/profile/{id}` | user token |
+| Attendee directory (search / filter) | `GET /functions/v1/user/people` | user token |
+| Send a connection request | `POST /functions/v1/user/connection/request` | user token |
+| Accept / reject one | `POST /functions/v1/user/connection/accept` \| `.../reject` | user token |
+| My requests and connections | `GET /functions/v1/user/connection/list` | user token |
+| Guilds with is_joined | `GET /functions/v1/user/guild/list` | user token |
+| Join / leave a guild | `POST /functions/v1/user/guild/join` \| `.../leave` | user token |
+| Members of a guild | `GET /functions/v1/user/guild/members` | user token |
 | List attendee-list emails | `GET /functions/v1/admin/user/list` | **admin** user token |
 | Add attendee-list emails | `POST /functions/v1/admin/user/add` | **admin** user token |
 | Remove attendee-list emails | `DELETE /functions/v1/admin/user/remove` | **admin** user token |
@@ -178,6 +187,30 @@ upload is deleted after a successful save. JPEG/PNG/WebP/HEIC, 5 MB max.
 There is no id in the path or body — the row is resolved from the token, so a
 caller can only ever read or write their own profile. Full request/response
 examples are in [../../postman/API.md](../../postman/API.md#4-profile-and-attendee-directory).
+
+## 7. Directory, connections and guilds
+
+The rest of the `user` function, all on the same envelope and all resolving the
+caller from the token:
+
+| Route | What it does |
+| --- | --- |
+| `GET user/profile/{id}` | Someone else's profile, plus `connection.status` (none / pending_sent / pending_received / connected / rejected) and `is_connected`. Their email is only included once connected |
+| `GET user/people` | Directory. `search` matches name, nerd number, company and job title in one term; `user_type` filters by type (`all` or a `configs.id`); `guild_id` narrows to one guild. Excludes the caller |
+| `POST user/connection/request` | `{ user_id }`. Asking someone who already asked you accepts their request instead |
+| `POST user/connection/accept` / `reject` | `{ request_id }` or `{ user_id }`. Only the person who received it can answer |
+| `GET user/connection/list` | `?status=pending` (default, your inbox), `sent`, `accepted` or `rejected`, with the same `search` |
+| `GET user/guild/list` | Every guild with `is_joined` for the caller, plus `joined_count` and `max_guilds` |
+| `POST user/guild/join` / `leave` | `{ guild_id }`. Refused at 3 guilds (join) and at 1 (leave) — the same 1..3 rule the profile enforces |
+| `GET user/guild/members` | `?guild_id=` — the same cards as `user/people`, scoped to one guild |
+
+Every list takes `page` / `per_page` (default 20, max 100) and answers with a
+`pagination` object; requests and cards are shaped the same way everywhere, so one
+renderer covers the directory, a guild's members and the connection inbox.
+
+Connections are one row per pair in `public.connections`, so state is
+direction-aware rather than duplicated: `public.connection_people` is the view
+that flattens it into "me / them" for the lists.
 
 ---
 

@@ -10,7 +10,7 @@ then run **1. Auth → Login** — it stores the token for every other request.
 
 The backend has two kinds of endpoint:
 
-- **Edge functions** (`/functions/v1/...`) — custom logic: auth (register, login, password reset), `config`, `user/profile` and the admin routes.
+- **Edge functions** (`/functions/v1/...`) — custom logic: auth (register, login, password reset), `config`, the `user/*` routes (profile, directory, connections, guilds) and the admin routes.
 - **Auto-generated REST** (`/rest/v1/...`) — direct table access, guarded by
   row-level security so a signed-in user can only ever reach their own data.
   Everything after login (profile, agenda, chat, missions, notifications) uses this.
@@ -316,6 +316,31 @@ Query parameters (PostgREST syntax) used throughout the rest of this document:
 | `Prefer: count=exact` | header | Total row count in the `Content-Range` response header |
 | `Prefer: return=representation` | header | Return the written row(s); `supabase-js` sends this when you chain `.select()` |
 
+### 3.1 Pagination
+
+Every listing endpoint on the edge functions (`user/people`,
+`user/connection/list`, `user/guild/list`, `user/guild/members`,
+`admin/user/list`) takes the same parameters and answers with the same object:
+
+| Parameter | Default | Notes |
+| --- | --- | --- |
+| `page` | 1 | 1-based |
+| `per_page` | 20 | Capped at 100 |
+| `limit` / `offset` | — | Accepted as aliases; `offset` wins over `page` if both are sent |
+
+```json
+"pagination": {
+  "total": 128, "page": 1, "per_page": 20,
+  "total_pages": 7, "has_next": true, "has_prev": false
+}
+```
+
+`total` counts what the filters matched, not the whole table, and `has_next` is
+derived from `total` — so a full last page does not look like there is more to
+fetch. A page past the end is an empty list, not an error.
+
+### 3.2 REST query parameters
+
 Errors look like this (not the `{ success, message }` envelope the functions use):
 
 ```json
@@ -343,8 +368,14 @@ Table `users`. Columns: `id`, `first_name`, `last_name`, `email`, `nerd_number`,
 
 Guilds are **many-to-many** through `user_guilds (user_id, guild_id)` — a user
 belongs to 1 to 3 of them, and the old `users.guild_id` column was dropped, so
-don't reference it. The selection is only writable through `register` and
-`PUT user/profile`, which is what keeps the 1..3 rule true.
+don't reference it. The selection is only writable through `register`,
+`PUT user/profile` and `user/guild/join|leave`, which is what keeps the 1..3 rule
+true.
+
+Who is connected to whom lives in `public.connections` (one row per pair) and is
+only writable through the `user/connection/*` routes. There is also a generated
+`users.search_text` column behind the directory search — never write it, and
+there is no reason to select it.
 
 Rows are created only by `register`. Every signed-in user can read the whole
 directory, but can update and delete only their own row.
@@ -489,7 +520,220 @@ Unknown ids are checked before the write, so the message names the id:
 `Guild 99 does not exist. Fetch the list from GET config/guilds.` A bad selection
 size says so too: `Pick between 1 and 3 guilds — 4 were sent.`
 
-### 4.3 Direct table access
+### 4.3 `GET user/profile/{id}` — another attendee's profile
+
+```
+GET /functions/v1/user/profile/<user-id>
+Authorization: Bearer <token>
+```
+
+The same detail as [§4.1](#41-get-userprofile--my-profile) for someone else, plus
+where the two of you stand:
+
+```json
+{
+  "status": "Success",
+  "message": "Profile loaded.",
+  "data": {
+    "id": "9d0f...",
+    "first_name": "Ada",
+    "last_name": "Byron",
+    "nerd_number": "00042",
+    "company_name": "Analytical Engines",
+    "job_title": "Mathematician",
+    "profile_image": "https://.../profile-images/9d0f.../1787184000000.jpg",
+    "user_type": { "id": 1, "name": "Builder", "description": "I create products, tools, and systems." },
+    "guilds": [{ "id": 1, "name": "AI & Agentic Systems", "description": null }],
+    "total_xp": 100,
+    "rank": 7,
+    "connection": { "status": "pending_received", "request_id": "3f1c..." },
+    "is_connected": false
+  }
+}
+```
+
+| `connection.status` | Meaning |
+| --- | --- |
+| `none` | No history. Show "Connect" |
+| `pending_sent` | You asked, they have not answered. Show "Requested" |
+| `pending_received` | They asked you. Show Accept / Reject, using `connection.request_id` |
+| `connected` | Show "Connected" (or a message button) |
+| `rejected` | Answered no. Either side may ask again |
+
+`is_connected` is the shorthand for `status === "connected"`. **`email` is only
+included once you are connected** — everything else here is directory
+information, an address is not. Passing your own id returns your own profile
+(same as §4.1).
+
+| Status | Body |
+| --- | --- |
+| 200 | above |
+| 400 | `{ "status": "Error", "message": "That is not an attendee id.", "data": null }` — the path segment is not a uuid |
+| 404 | `{ "status": "Error", "message": "That attendee could not be found.", "data": null }` |
+
+### 4.4 `GET user/people` — attendee directory
+
+```
+GET /functions/v1/user/people?search=&user_type=&guild_id=&page=&per_page=
+Authorization: Bearer <token>
+```
+
+| Parameter | Notes |
+| --- | --- |
+| `search` | One term matched against name, nerd number, company and job title — `"wasim raza"`, `"00427"` and `"simpalm"` all work. Case-insensitive, partial |
+| `user_type` | A `configs.id` where `type = 'user_type'` (1 = Builder, 2 = Operator, 3 = Explorer), or `all` / omitted for every type |
+| `guild_id` | Only people in that guild, or `all` / omitted for every guild |
+| `page`, `per_page` | See [§3.1](#31-pagination). Default 20 per page, max 100 |
+
+```json
+{
+  "status": "Success",
+  "message": "128 attendees found.",
+  "data": {
+    "people": [
+      {
+        "id": "9d0f...",
+        "first_name": "Ada",
+        "last_name": "Byron",
+        "nerd_number": "00042",
+        "company_name": "Analytical Engines",
+        "job_title": "Mathematician",
+        "profile_image": "https://.../1787184000000.jpg",
+        "user_type_config_id": 1,
+        "user_type": { "id": 1, "name": "Builder", "description": "I create products, tools, and systems." },
+        "guilds": [{ "id": 1, "name": "AI & Agentic Systems", "description": null }],
+        "connection": { "status": "none", "request_id": null },
+        "is_connected": false
+      }
+    ],
+    "search": "ada",
+    "pagination": { "total": 128, "page": 1, "per_page": 20, "total_pages": 7, "has_next": true, "has_prev": false }
+  }
+}
+```
+
+Your own row is never in the list. Each card carries the same `connection` object
+as §4.3, so the right button can be drawn without a second call. No email or
+device fields are returned here.
+
+### 4.5 Connections
+
+Four routes, all in the `{ status, message, data }` envelope. One request exists
+per pair of people, whichever way round it went.
+
+```
+POST /functions/v1/user/connection/request   { "user_id": "<uuid>" }
+POST /functions/v1/user/connection/accept    { "request_id": "<uuid>" }   // or { "user_id" }
+POST /functions/v1/user/connection/reject    { "request_id": "<uuid>" }   // or { "user_id" }
+GET  /functions/v1/user/connection/list?status=pending&search=&page=&per_page=
+```
+
+`request`, `accept` and `reject` all answer with the pair's new state:
+
+```json
+{
+  "status": "Success",
+  "message": "Connection request sent.",
+  "data": { "status": "pending_sent", "request_id": "3f1c..." }
+}
+```
+
+| Route | Status | Body |
+| --- | --- | --- |
+| request | 200 | `{ status: "pending_sent", request_id }` |
+| request | 200 | `"You are now connected — they had already sent you a request."` — asking someone who already asked you accepts theirs |
+| request | 400 | Not a uuid, or your own id |
+| request | 404 | No such attendee |
+| request | 409 | Already connected, or you have already asked |
+| accept / reject | 200 | `{ status: "connected" \| "rejected", request_id }` |
+| accept / reject | 403 | `"Only the person who received a request can answer it."` |
+| accept / reject | 404 | No such request, or it is not yours |
+| accept / reject | 409 | Already answered |
+
+A rejected pair can be asked again — the same row reopens as `pending` with
+whoever asked second as the requester.
+
+**`GET user/connection/list`** — the inbox by default:
+
+| `status=` | Returns |
+| --- | --- |
+| `pending` (default) | Requests waiting on **you** to answer |
+| `sent` | Requests you sent that have not been answered |
+| `accepted` | Your connections, whoever asked |
+| `rejected` | Pairs that were answered no |
+
+```json
+{
+  "status": "Success",
+  "message": "3 requests.",
+  "data": {
+    "requests": [
+      {
+        "request_id": "3f1c...",
+        "status": "pending_received",
+        "created_at": "2026-08-20T09:02:11.120044+00:00",
+        "responded_at": null,
+        "user": { "id": "9d0f...", "first_name": "Ada", "last_name": "Byron", "nerd_number": "00042", "company_name": "Analytical Engines", "job_title": "Mathematician", "profile_image": null, "user_type": { "id": 1, "name": "Builder", "description": "..." }, "guilds": [] }
+      }
+    ],
+    "status": "pending",
+    "search": null,
+    "pagination": { "total": 3, "page": 1, "per_page": 20, "total_pages": 1, "has_next": false, "has_prev": false }
+  }
+}
+```
+
+`user` is the other person's card, the same shape as in `people`. `search`
+narrows by their name, company or job title (and nerd number), exactly like §4.4.
+
+### 4.6 Guilds — join, leave, and who else is in one
+
+```
+GET  /functions/v1/user/guild/list?search=&page=&per_page=
+POST /functions/v1/user/guild/join    { "guild_id": 1 }
+POST /functions/v1/user/guild/leave   { "guild_id": 1 }
+GET  /functions/v1/user/guild/members?guild_id=1&search=&page=&per_page=
+```
+
+`guild/list` is every guild with the caller's membership flagged, which is what a
+"my guilds" picker needs:
+
+```json
+{
+  "status": "Success",
+  "message": "15 guilds.",
+  "data": {
+    "guilds": [
+      { "id": 1, "name": "AI & Agentic Systems", "description": null, "is_joined": true },
+      { "id": 2, "name": "Banking", "description": null, "is_joined": false }
+    ],
+    "joined_count": 1,
+    "max_guilds": 3,
+    "search": null,
+    "pagination": { "total": 15, "page": 1, "per_page": 20, "total_pages": 1, "has_next": false, "has_prev": false }
+  }
+}
+```
+
+`join` / `leave` edit the same 1–3 selection that shows on the profile, and answer
+with the selection afterwards:
+
+```json
+{ "status": "Success", "message": "You joined Banking.", "data": { "guilds": [ { "id": 1, "name": "AI & Agentic Systems", "description": null }, { "id": 2, "name": "Banking", "description": null } ] } }
+```
+
+| Status | Body |
+| --- | --- |
+| 200 | The guilds the caller now belongs to |
+| 400 | `"guild_id" is required...` or `Guild 99 does not exist.` |
+| 409 | `You are already in Banking.` / `You are not in Banking.` |
+| 409 | `You can belong to at most 3 guilds. Leave one first.` — on join |
+| 409 | `You have to belong to at least 1 guild. Join another one first.` — on leave |
+
+`guild/members` is `user/people` scoped to one guild — same card, same
+`search` / `user_type` / paging, and it also excludes you. `guild_id` is required.
+
+### 4.7 Direct table access
 
 | Action | Call |
 | --- | --- |
@@ -543,6 +787,7 @@ user has a token.
 | --- | --- |
 | `GET /functions/v1/config` | Everything |
 | `GET /functions/v1/config/guilds` | `guilds` only |
+| `GET /functions/v1/config/sponsors` | `sponsors` only |
 | `GET /functions/v1/config/user_type` | That one config type |
 | `GET /functions/v1/config?type=event-day,stage-type` | Several types (comma-separated) |
 
@@ -561,6 +806,15 @@ user has a token.
       { "id": 1, "name": "AI & Agentic Systems", "description": null },
       { "id": 2, "name": "Banking", "description": null }
     ],
+    "sponsors": [
+      {
+        "id": 1,
+        "name": "Simon Taylor",
+        "company_name": "Sardine",
+        "description": "Headline sponsor.",
+        "profile_image": "https://.../sponsors/sardine.png"
+      }
+    ],
     "user_type":   [{ "id": 1, "name": "Builder", "description": "I create products, tools, and systems." }, { "id": 2, "name": "Operator", "description": "I run and optimize processes to keep things moving." }, { "id": 3, "name": "Explorer", "description": "I discover new ideas, markets, and opportunities." }],
     "event-quest": [{ "id": 4, "name": "Main Quests", "description": null }, { "id": 5, "name": "Side Quests", "description": null }, { "id": 6, "name": "Bonus Quests", "description": null }, { "id": 7, "name": "My Schedule", "description": null }],
     "event-day":   [{ "id": 8, "name": "Day 0", "description": null }, { "id": 9, "name": "Day 1", "description": null }, { "id": 10, "name": "Day 2", "description": null }],
@@ -569,14 +823,16 @@ user has a token.
 }
 ```
 
-Every row is `{ id, name, description }`. `description` is only populated for
+`sponsors` rows are `{ id, name, company_name, description, profile_image }`,
+ordered by `sort_order` then name, and inactive ones are left out. Everything else
+is `{ id, name, description }`, where `description` is only populated for
 `user_type` today — guilds are names only, and the other config types have no
 copy — so treat `null` as "nothing to show" rather than an error. `guilds` has 15
 rows; the sample above is trimmed.
 
 | Status | Body |
 | --- | --- |
-| 200 | above — rows are `{ id, name, description }`, `description` null except for `user_type` |
+| 200 | above — config rows are `{ id, name, description }` (`description` null except for `user_type`); `sponsors` rows carry `company_name` and `profile_image` too |
 | 404 | `{ "success": false, "message": "Unknown config type \"typo\".", "available": ["guilds", "event-day", ...] }` — path form only |
 | 405 | `{ "success": false, "message": "Method not allowed." }` — GET only |
 
@@ -613,6 +869,7 @@ filter server-side:
 | Table | Call |
 | --- | --- |
 | `guilds` | `GET /rest/v1/guilds?select=id,name,description&order=id` |
+| `sponsors` | `GET /rest/v1/sponsors?select=id,name,company_name,description,profile_image&is_active=eq.true&order=sort_order` |
 | `configs` | `GET /rest/v1/configs?select=id,name,description&type=eq.user_type` |
 
 ---
@@ -1037,3 +1294,4 @@ These have no endpoint. The ones marked *SDK* need no backend work — call
 | Delete account | Partly — `DELETE /rest/v1/users?id=eq.<my-id>` removes the profile, but the `auth.users` row survives, so the email cannot be re-registered. Needs an edge function to do both |
 | Profile image upload | Built — `PUT user/profile` uploads to the `profile-images` bucket, see [§4.2](#42-put-userprofile--update-my-profile) |
 | Sending push notifications | Rows can be inserted into `notifications` server-side, but nothing delivers to FCM/APNs yet |
+| Sponsor management | The `sponsors` table is read by `GET config/sponsors`; rows are added in Studio or by the service role, there is no admin route for them yet |

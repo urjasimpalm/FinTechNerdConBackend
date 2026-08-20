@@ -47,11 +47,15 @@ insert into public.missions (id, title, description, points) overriding system v
   (1, 'Book Your First Quest', 'Add an offsite event to your schedule.', 50),
   (2, 'Add a session to your schedule', 'Check in to a Main Quest or Side Quest Stage session and level up your knowledge.', 50),
   (3, 'Visit an Activation', 'Explore a sponsor activation in the Activation Hall.', 50),
-  (4, 'Connect with a New Nerd', 'Make a new connection through the event app with a fellow attendee.', 50);
+  (4, 'Connect with a New Nerd', 'Make a new connection through the event app with a fellow attendee.', 50),
+  (5, 'Explore a New Zone', 'Visit one of NerdCon''s themed worlds and discover what''s inside.', 50),
+  (6, 'Nerd Flex', 'Find Simon, Colton, or Joy, snap a gloriously nerdy photo together (high-five, goofy grin, swag, props, or your best geeky pose), and share it on LinkedIn or your favorite social platform using #FintechNerdCon.', 50),
+  (7, 'Quest Master', 'Complete every core mission.', 50)
+on conflict (id) do nothing;
 
 -- guilds and missions were inserted with `overriding system value`, which does
 -- not advance their identity sequences: both were left unused while ids 1..15 and
--- 1..4 are taken. The next insert that lets the database pick an id (adding a
+-- 1..7 are taken. The next insert that lets the database pick an id (adding a
 -- guild in Studio, say) would ask for id 1 and fail on the primary key. Move each
 -- sequence past the rows just inserted. configs uses the sequence normally, so it
 -- is already correct — set it too, so this stays right if that ever changes.
