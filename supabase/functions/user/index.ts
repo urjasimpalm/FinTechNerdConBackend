@@ -5,14 +5,12 @@
 //   PUT  /functions/v1/user/profile              → update my profile
 //   GET  /functions/v1/user/profile/{id}         → someone else's, with our connection state
 //   GET  /functions/v1/user/people               → attendee directory (search, filter, paged)
-//   POST /functions/v1/user/connection/request   → ask to connect
-//   POST /functions/v1/user/connection/accept    → answer yes
-//   POST /functions/v1/user/connection/reject    → answer no
-//   GET  /functions/v1/user/connection/list      → my requests / connections (paged)
-//   GET  /functions/v1/user/guild/list           → every guild, flagged is_joined
-//   POST /functions/v1/user/guild/join           → join a guild
-//   POST /functions/v1/user/guild/leave          → leave a guild
-//   GET  /functions/v1/user/guild/members        → who else is in a guild (paged)
+//   POST /functions/v1/user/connection/request    → ask to connect
+//   POST /functions/v1/user/connection/respond    → action: accept | reject
+//   GET  /functions/v1/user/connection/list       → my requests / connections (paged)
+//   GET  /functions/v1/user/guild/list            → every guild, flagged is_joined
+//   POST /functions/v1/user/guild/membership      → action: join | leave
+//   GET  /functions/v1/user/guild/members         → who else is in a guild (paged)
 //
 // Every route needs a real user token (see requireUser) and acts as that caller:
 // there is no id in the path except the one being looked at, and nothing here can
@@ -35,12 +33,10 @@ const ROUTES = [
   "GET user/profile/{id}",
   "GET user/people",
   "POST user/connection/request",
-  "POST user/connection/accept",
-  "POST user/connection/reject",
+  'POST user/connection/respond (action: "accept" | "reject")',
   "GET user/connection/list",
   "GET user/guild/list",
-  "POST user/guild/join",
-  "POST user/guild/leave",
+  'POST user/guild/membership (action: "join" | "leave")',
   "GET user/guild/members",
 ];
 
@@ -87,18 +83,22 @@ Deno.serve(async (req) => {
         return await getGuildMembers(url, me);
 
       case "connection/request":
-      case "connection/accept":
-      case "connection/reject":
-      case "guild/join":
-      case "guild/leave": {
+      case "connection/respond":
+      case "guild/membership": {
         if (req.method !== "POST") return methodNotAllowed(route, "POST");
         const body = await readJson(req);
         if (!body) return fail("A JSON body is required.", 400);
 
+        // accept/reject and join/leave are one route each, told apart by
+        // `action` — in the body, or on the query string for a client that would
+        // rather keep it out of the body.
+        const action = url.searchParams.get("action")?.trim() ?? null;
+
         if (route === "connection/request") return await sendRequest(body, me);
-        if (route === "connection/accept") return await respondToRequest(body, me, true);
-        if (route === "connection/reject") return await respondToRequest(body, me, false);
-        return await changeGuild(body, me, route === "guild/join");
+        if (route === "connection/respond") {
+          return await respondToRequest(body, me, action);
+        }
+        return await changeGuild(body, me, action);
       }
     }
 

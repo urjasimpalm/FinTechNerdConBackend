@@ -1,14 +1,13 @@
 // Connection requests: send, accept, reject, and list.
 //
 //   POST user/connection/request  { "user_id": "<uuid>" }
-//   POST user/connection/accept   { "user_id" | "request_id" }
-//   POST user/connection/reject   { "user_id" | "request_id" }
+//   POST user/connection/respond  { "request_id" | "user_id", "action": "accept" | "reject" }
 //   GET  user/connection/list?status=pending|sent|accepted|rejected&search=
 //
 // One row per pair in public.connections, so the state machine is: none →
 // pending → accepted | rejected, and a rejected pair can be asked again, which
 // reopens the same row with whoever asked second as the requester.
-import { fail, ok } from "../_shared/http.ts";
+import { fail, ok, text } from "../_shared/http.ts";
 import {
   CONNECTION_COLUMNS,
   type ConnectionRow,
@@ -125,7 +124,9 @@ export async function sendRequest(
 }
 
 /**
- * POST user/connection/accept and .../reject.
+ * POST user/connection/respond — one route for both answers, told apart by
+ * `action` ("accept" or "reject"). It may also come from the query string, so
+ * `?action=reject` works for a client that would rather not put it in the body.
  *
  * Only the addressee of a pending request can answer it — the person who sent it
  * cannot accept their own, and neither side can re-answer one that is settled.
@@ -133,8 +134,14 @@ export async function sendRequest(
 export async function respondToRequest(
   body: Record<string, unknown>,
   viewerId: string,
-  accept: boolean,
+  queryAction: string | null,
 ): Promise<Response> {
+  const action = (text(body.action) ?? queryAction ?? "").toLowerCase();
+  if (action !== "accept" && action !== "reject") {
+    return fail('"action" must be "accept" or "reject".', 400);
+  }
+  const accept = action === "accept";
+
   const requestId = uuid(body.request_id);
   const targetId = uuid(body.user_id ?? body.requester_id);
   if (!requestId && !targetId) {

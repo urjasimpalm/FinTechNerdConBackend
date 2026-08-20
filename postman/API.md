@@ -623,12 +623,15 @@ per pair of people, whichever way round it went.
 
 ```
 POST /functions/v1/user/connection/request   { "user_id": "<uuid>" }
-POST /functions/v1/user/connection/accept    { "request_id": "<uuid>" }   // or { "user_id" }
-POST /functions/v1/user/connection/reject    { "request_id": "<uuid>" }   // or { "user_id" }
+POST /functions/v1/user/connection/respond   { "request_id": "<uuid>", "action": "accept" | "reject" }
 GET  /functions/v1/user/connection/list?status=pending&search=&page=&per_page=
 ```
 
-`request`, `accept` and `reject` all answer with the pair's new state:
+Accepting and rejecting are the same route, told apart by `action`. It takes
+`request_id` or `user_id`, and `action` may also be sent on the query string
+(`?action=reject`) if you would rather keep it out of the body.
+
+Both routes answer with the pair's new state:
 
 ```json
 {
@@ -645,10 +648,11 @@ GET  /functions/v1/user/connection/list?status=pending&search=&page=&per_page=
 | request | 400 | Not a uuid, or your own id |
 | request | 404 | No such attendee |
 | request | 409 | Already connected, or you have already asked |
-| accept / reject | 200 | `{ status: "connected" \| "rejected", request_id }` |
-| accept / reject | 403 | `"Only the person who received a request can answer it."` |
-| accept / reject | 404 | No such request, or it is not yours |
-| accept / reject | 409 | Already answered |
+| respond | 200 | `{ status: "connected" \| "rejected", request_id }` |
+| respond | 400 | `"action" must be "accept" or "reject".`, or neither id was sent |
+| respond | 403 | `"Only the person who received a request can answer it."` |
+| respond | 404 | No such request, or it is not yours |
+| respond | 409 | Already answered |
 
 A rejected pair can be asked again — the same row reopens as `pending` with
 whoever asked second as the requester.
@@ -690,10 +694,12 @@ narrows by their name, company or job title (and nerd number), exactly like §4.
 
 ```
 GET  /functions/v1/user/guild/list?search=&page=&per_page=
-POST /functions/v1/user/guild/join    { "guild_id": 1 }
-POST /functions/v1/user/guild/leave   { "guild_id": 1 }
+POST /functions/v1/user/guild/membership   { "guild_id": 1, "action": "join" | "leave" }
 GET  /functions/v1/user/guild/members?guild_id=1&search=&page=&per_page=
 ```
+
+Joining and leaving are the same route, told apart by `action` (which also works
+as `?action=leave` on the query string).
 
 `guild/list` is every guild with the caller's membership flagged, which is what a
 "my guilds" picker needs:
@@ -715,7 +721,7 @@ GET  /functions/v1/user/guild/members?guild_id=1&search=&page=&per_page=
 }
 ```
 
-`join` / `leave` edit the same 1–3 selection that shows on the profile, and answer
+`membership` edits the same 1–3 selection that shows on the profile, and answers
 with the selection afterwards:
 
 ```json
@@ -725,10 +731,15 @@ with the selection afterwards:
 | Status | Body |
 | --- | --- |
 | 200 | The guilds the caller now belongs to |
-| 400 | `"guild_id" is required...` or `Guild 99 does not exist.` |
+| 400 | `"action" must be "join" or "leave".`, `"guild_id" is required...` or `Guild 99 does not exist.` |
 | 409 | `You are already in Banking.` / `You are not in Banking.` |
-| 409 | `You can belong to at most 3 guilds. Leave one first.` — on join |
-| 409 | `You have to belong to at least 1 guild. Join another one first.` — on leave |
+| 409 | `You can belong to at most 3 guilds. Leave one first.` — `action: "join"` |
+| 409 | `You have to belong to at least 1 guild. Join another one first.` — `action: "leave"` |
+
+**The cap of 3 is enforced three deep:** this route refuses the join,
+`public.set_user_guilds()` rejects any selection outside 1–3, and the
+`user_guilds_limit` trigger raises on a fourth row — so no path, including the
+service role, can push someone over.
 
 `guild/members` is `user/people` scoped to one guild — same card, same
 `search` / `user_type` / paging, and it also excludes you. `guild_id` is required.
