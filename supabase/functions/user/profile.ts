@@ -12,6 +12,7 @@ import {
   readGuildIds,
   setGuilds,
   shapeProfile,
+  withoutPrivateFields,
 } from "../_shared/profile.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
@@ -440,7 +441,10 @@ export async function updateProfile(req: Request, userId: string): Promise<Respo
  * `is_connected` is the shorthand for the button.
  *
  * Email is only included once connected. Everything else about an attendee is
- * directory information — their address is not.
+ * directory information — their address is not, and neither is `is_admin`.
+ *
+ * An admin account answers 404 here: staff are not attendees, and they are absent
+ * from the directory for the same reason.
  */
 export async function getOtherProfile(
   viewerId: string,
@@ -456,8 +460,12 @@ export async function getOtherProfile(
       : result.response;
   }
 
+  if (result.profile.is_admin === true) {
+    return fail("That attendee could not be found.", 404);
+  }
+
   const connection = summarise(await findConnection(viewerId, targetId), viewerId);
-  const profile = { ...result.profile };
+  const profile = withoutPrivateFields(result.profile);
   if (connection.status !== "connected") delete profile.email;
 
   return ok("Profile loaded.", {

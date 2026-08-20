@@ -17,7 +17,7 @@ import {
   summarise,
 } from "../_shared/connections.ts";
 import { fetchPage, likeTerm, pageMeta, readPage } from "../_shared/pagination.ts";
-import { PERSON_SELECT, shapeProfile } from "../_shared/profile.ts";
+import { ATTENDEE_ONLY, PERSON_SELECT, shapeProfile } from "../_shared/profile.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,11 +38,13 @@ function uuid(value: unknown): string | null {
   return typeof value === "string" && UUID_RE.test(value.trim()) ? value.trim() : null;
 }
 
+/** Staff accounts are not attendees, so they cannot be sent a request either. */
 async function requireAttendee(userId: string): Promise<boolean> {
   const { data, error } = await serviceClient()
     .from("users")
     .select("id")
     .eq("id", userId)
+    .eq(ATTENDEE_ONLY.column, ATTENDEE_ONLY.value)
     .maybeSingle();
   if (error) throw error;
   return data !== null;
@@ -234,6 +236,8 @@ export async function listConnections(url: URL, viewerId: string): Promise<Respo
       )
       .eq("viewer_id", viewerId)
       .eq("status", list.status)
+      // Staff are invisible to attendees, including a request an admin sent.
+      .not("other_is_admin", "is", true)
       .order("created_at", { ascending: false })
       .order("request_id");
 

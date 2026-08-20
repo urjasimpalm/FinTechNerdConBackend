@@ -81,6 +81,12 @@ verify_jwt = false
 [functions.user]
 verify_jwt = true
 
+# chat/create, chat/list, chat/details/{id}, chat/send/{id}. Same as the user
+# routes: the function resolves the caller from the token and checks they are a
+# participant, so the anon key alone gets a 401.
+[functions.chat]
+verify_jwt = true
+
 # Admin routes (admin/user/list, admin/user/add, admin/user/remove). verify_jwt
 # is left on so the gateway rejects requests with no JWT at all, but it is not the
 # real gate: the anon key is itself a valid JWT, so the function checks

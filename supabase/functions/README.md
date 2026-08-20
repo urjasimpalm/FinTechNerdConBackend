@@ -22,6 +22,10 @@ chat, missions, notifications — see [../../postman/API.md](../../postman/API.m
 | Guilds with is_joined | `GET /functions/v1/user/guild/list` | user token |
 | Join / leave a guild | `POST /functions/v1/user/guild/membership` | user token |
 | Members of a guild | `GET /functions/v1/user/guild/members` | user token |
+| Start a chat | `POST /functions/v1/chat/create` | user token |
+| My chats | `GET /functions/v1/chat/list` | user token |
+| Open a chat | `GET /functions/v1/chat/details/{id}` | user token |
+| Send a message | `POST /functions/v1/chat/send/{id}` | user token |
 | List attendee-list emails | `GET /functions/v1/admin/user/list` | **admin** user token |
 | Add attendee-list emails | `POST /functions/v1/admin/user/add` | **admin** user token |
 | Remove attendee-list emails | `DELETE /functions/v1/admin/user/remove` | **admin** user token |
@@ -207,6 +211,15 @@ caller from the token:
 `action` on the two merged routes can also be sent as `?action=...` on the query
 string, for a client that would rather keep it out of the body.
 
+**Admin accounts are invisible to attendees.** `is_admin = true` means event
+staff, so those rows are filtered out of the directory and guild member lists (and
+out of `pagination.total`), answer 404 as a profile / connection / chat target, and
+are filtered out of the connection and chat lists through `other_is_admin` on
+`public.connection_people` and `public.chat_overview` — so a request or chat an
+admin started does not surface for the attendee either. The flag itself is only
+returned for the signed-in user. A staff member who should also appear as an
+attendee needs a second account with `is_admin` false.
+
 Every list takes `page` / `per_page` (default 20, max 100) and answers with a
 `pagination` object; requests and cards are shaped the same way everywhere, so one
 renderer covers the directory, a guild's members and the connection inbox.
@@ -214,6 +227,34 @@ renderer covers the directory, a guild's members and the connection inbox.
 Connections are one row per pair in `public.connections`, so state is
 direction-aware rather than duplicated: `public.connection_people` is the view
 that flattens it into "me / them" for the lists.
+
+## 8. Chat
+
+```
+POST chat/create        { "user_id": "<uuid>" }
+GET  chat/list          ?search=&page=&per_page=
+GET  chat/details/{id}  ?page=&per_page=
+POST chat/send/{id}     { "message": "..." }
+```
+
+`create` is find-or-create — one direct chat per pair, so tapping the button twice
+opens the same conversation (`created` says which happened). No connection request
+is required first.
+
+`list` reads `public.chat_overview`, so each row already has the other person's
+card, the last message and an unread count. `details` returns messages newest
+first (page 1 is what the screen opens on) and marks the chat read; there is no
+separate mark-read call. `send` takes `{ "message": "..." }`, up to 4000
+characters.
+
+Membership is the authorisation check on every route: a chat id you are not a
+participant of answers 404, not 403. Creating a chat goes through
+`public.start_direct_chat()`, which inserts the chat and both participant rows in
+one transaction — over PostgREST that was three writes, and the first two could
+not read their own rows back.
+
+New messages arriving while a screen is open still come over realtime on
+`chat_messages`; these endpoints are for loading and sending.
 
 ---
 

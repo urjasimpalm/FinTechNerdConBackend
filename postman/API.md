@@ -10,7 +10,7 @@ then run **1. Auth → Login** — it stores the token for every other request.
 
 The backend has two kinds of endpoint:
 
-- **Edge functions** (`/functions/v1/...`) — custom logic: auth (register, login, password reset), `config`, the `user/*` routes (profile, directory, connections, guilds) and the admin routes.
+- **Edge functions** (`/functions/v1/...`) — custom logic: auth (register, login, password reset), `config`, the `user/*` routes (profile, directory, connections, guilds), `chat/*` and the admin routes.
 - **Auto-generated REST** (`/rest/v1/...`) — direct table access, guarded by
   row-level security so a signed-in user can only ever reach their own data.
   Everything after login (profile, agenda, chat, missions, notifications) uses this.
@@ -372,6 +372,24 @@ don't reference it. The selection is only writable through `register`,
 `PUT user/profile` and `user/guild/join|leave`, which is what keeps the 1..3 rule
 true.
 
+**Admin accounts are invisible to attendees.** A user whose `is_admin` is true is
+event staff, not an attendee, so they are left out of every attendee-facing
+response:
+
+| Endpoint | Behaviour |
+| --- | --- |
+| `GET user/people`, `GET user/guild/members` | Not in the list, and not counted in `pagination.total` |
+| `GET user/profile/{id}` | `404 That attendee could not be found.` |
+| `POST user/connection/request`, `POST chat/create` | `404 That attendee could not be found.` |
+| `GET user/connection/list`, `GET chat/list`, `GET chat/details/{id}`, `POST chat/send/{id}` | Rows where the other person is staff are filtered out — so a request or chat an admin *started* never surfaces either |
+
+The `is_admin` flag itself is only returned for **the signed-in user** (in
+`GET user/profile` and in login's `data.user`, where the app needs it to decide
+whether to show admin screens). It is not part of anyone else's profile or card.
+
+If a staff member should also appear as an attendee, give them a second account
+and leave `is_admin` false on it.
+
 Who is connected to whom lives in `public.connections` (one row per pair) and is
 only writable through the `user/connection/*` routes. There is also a generated
 `users.search_text` column behind the directory search — never write it, and
@@ -560,7 +578,8 @@ where the two of you stand:
 | `connected` | Show "Connected" (or a message button) |
 | `rejected` | Answered no. Either side may ask again |
 
-`is_connected` is the shorthand for `status === "connected"`. **`email` is only
+`is_connected` is the shorthand for `status === "connected"`. `is_admin` is not
+returned here at all, and an admin's id answers 404. **`email` is only
 included once you are connected** — everything else here is directory
 information, an address is not. Passing your own id returns your own profile
 (same as §4.1).
@@ -612,8 +631,8 @@ Authorization: Bearer <token>
 }
 ```
 
-Your own row is never in the list. Each card carries the same `connection` object
-as §4.3, so the right button can be drawn without a second call. No email or
+Your own row is never in the list, and neither is any admin account. Each card
+carries the same `connection` object as §4.3, so the right button can be drawn without a second call. No email or
 device fields are returned here.
 
 ### 4.5 Connections
@@ -974,41 +993,148 @@ ambiguous — name the constraint as shown above.
 
 ## 8. Chat
 
-`chats`: `id`, `is_group`, `created_at` — visible only to participants.
-`chat_participants`: `id`, `chat_id`, `user_id`, `joined_at`, unique per pair.
-`chat_messages`: `id`, `chat_id`, `sender_id`, `body`, `created_at` — insert only,
-messages cannot be edited or deleted.
+Four endpoints on the `chat` function, all needing a user token and all in the
+`{ status, message, data }` envelope:
 
-**Creating a chat takes three writes, and the first two must not request the row
-back.** A chat is only readable once you are a participant, so
-`insert(...).select()` fails with `42501` — generate the id on the client instead:
-
-```ts
-const chatId = crypto.randomUUID();
-
-// 1. the chat — no .select()
-await supabase.from("chats").insert({ id: chatId, is_group: false });
-
-// 2. yourself, then the other person — no .select()
-await supabase.from("chat_participants").insert([
-  { chat_id: chatId, user_id: user.id },
-  { chat_id: chatId, user_id: otherUserId },
-]);
-
-// 3. from here on everything reads normally
-await supabase.from("chat_messages")
-  .insert({ chat_id: chatId, sender_id: user.id, body: text })
-  .select();
+```
+POST /functions/v1/chat/create        { "user_id": "<uuid>" }
+GET  /functions/v1/chat/list          ?search=&page=&per_page=
+GET  /functions/v1/chat/details/{id}  ?page=&per_page=
+POST /functions/v1/chat/send/{id}     { "message": "..." }
 ```
 
-| Action | Call |
-| --- | --- |
-| My chats | `GET /rest/v1/chats?select=id,is_group,created_at,chat_participants(user_id),chat_messages(body,created_at)&order=created_at.desc` |
-| Messages in a chat | `GET /rest/v1/chat_messages?select=id,body,created_at,sender:users(id,first_name,last_name,profile_image)&chat_id=eq.<id>&order=created_at.asc` |
-| Send | `POST /rest/v1/chat_messages` with `chat_id`, `sender_id` (must be you), `body` |
-| Add a member | `POST /rest/v1/chat_participants` (you must already be in the chat) |
+Tables behind them: `chats` (`id`, `is_group`, `direct_key`, `created_at`),
+`chat_participants` (`chat_id`, `user_id`, `joined_at`, `last_read_at`) and
+`chat_messages` (`id`, `chat_id`, `sender_id`, `body`, `created_at` — insert only,
+messages cannot be edited or deleted). Every route checks that the caller is a
+participant first, so a chat id from somewhere else answers 404, not 403.
 
-Live updates:
+### 8.1 `POST chat/create` — start a chat with someone
+
+```json
+{
+  "status": "Success",
+  "message": "Chat started.",
+  "data": {
+    "chat_id": "6b1e...",
+    "created": true,
+    "user": { "id": "9d0f...", "first_name": "Ada", "last_name": "Byron", "nerd_number": "00042", "company_name": "Analytical Engines", "job_title": "Mathematician", "profile_image": null, "user_type": { "id": 1, "name": "Builder", "description": "..." }, "guilds": [] }
+  }
+}
+```
+
+Admin accounts answer 404 here, the same as everywhere else attendee-facing.
+
+**Find-or-create**, so the button can be tapped twice without making two
+conversations: `created` is `false` and the message reads "Chat opened." when the
+chat already existed. There is one direct chat per pair, whichever side started
+it. No connection request is needed first — any attendee can be messaged.
+
+| Status | Body |
+| --- | --- |
+| 200 | above |
+| 400 | `"user_id" must be an attendee id.` / `You cannot start a chat with yourself.` |
+| 404 | `That attendee could not be found.` |
+
+### 8.2 `GET chat/list` — my chats
+
+Most recently active first, paged ([§3.1](#31-pagination)). `search` matches the
+other person the same way the directory does — name, nerd number, company, title.
+
+```json
+{
+  "status": "Success",
+  "message": "4 chats.",
+  "data": {
+    "chats": [
+      {
+        "chat_id": "6b1e...",
+        "is_group": false,
+        "created_at": "2026-08-20T09:02:11.120044+00:00",
+        "unread_count": 2,
+        "user": { "id": "9d0f...", "first_name": "Ada", "last_name": "Byron", "profile_image": null, "...": "same card as the directory" },
+        "last_message": {
+          "id": "af31...",
+          "body": "See you at the Payments stage",
+          "sender_id": "9d0f...",
+          "is_mine": false,
+          "created_at": "2026-08-20T10:14:52.001+00:00"
+        }
+      }
+    ],
+    "search": null,
+    "pagination": { "total": 4, "page": 1, "per_page": 20, "total_pages": 1, "has_next": false, "has_prev": false }
+  }
+}
+```
+
+`last_message` is `null` for a chat nobody has written in yet — those sort by
+their own `created_at`. `unread_count` counts messages from the other person since
+you last opened the chat.
+
+### 8.3 `GET chat/details/{id}` — open a chat
+
+The chat, the other person, and a page of messages **newest first** — so page 1 is
+what the screen opens on. Reverse the array to render oldest-at-top, and fetch
+`page=2` for older history.
+
+```json
+{
+  "status": "Success",
+  "message": "Chat loaded.",
+  "data": {
+    "chat_id": "6b1e...",
+    "is_group": false,
+    "created_at": "2026-08-20T09:02:11.120044+00:00",
+    "unread_count": 2,
+    "user": { "id": "9d0f...", "first_name": "Ada", "...": "same card" },
+    "messages": [
+      { "id": "af31...", "chat_id": "6b1e...", "sender_id": "9d0f...", "body": "See you at the Payments stage", "created_at": "2026-08-20T10:14:52.001+00:00", "is_mine": false },
+      { "id": "9c02...", "chat_id": "6b1e...", "sender_id": "032b...", "body": "Are you going to the keynote?", "created_at": "2026-08-20T10:12:07.441+00:00", "is_mine": true }
+    ],
+    "pagination": { "total": 2, "page": 1, "per_page": 20, "total_pages": 1, "has_next": false, "has_prev": false }
+  }
+}
+```
+
+**Opening a chat marks it read** — there is no separate call for that. The
+`unread_count` in this payload is the count from *before* it was cleared, so the
+badge can be updated from the same response that fills the screen.
+
+| Status | Body |
+| --- | --- |
+| 200 | above |
+| 400 | `That is not a chat id.` — the path segment is not a uuid |
+| 404 | `That chat could not be found.` — no such chat, or you are not in it |
+
+### 8.4 `POST chat/send/{id}` — send a message
+
+```json
+{ "message": "Are you going to the keynote?" }
+```
+
+Answers with the stored message:
+
+```json
+{
+  "status": "Success",
+  "message": "Message sent.",
+  "data": { "id": "9c02...", "chat_id": "6b1e...", "sender_id": "032b...", "body": "Are you going to the keynote?", "created_at": "2026-08-20T10:12:07.441+00:00", "is_mine": true }
+}
+```
+
+| Status | Body |
+| --- | --- |
+| 200 | above |
+| 400 | `"message" cannot be empty.` / `Messages must be 4000 characters or fewer.` |
+| 404 | `That chat could not be found.` — no such chat, or you are not in it |
+
+Sending also marks the chat read for the sender.
+
+### 8.5 Live updates
+
+The endpoints above are for sending and loading; new messages arriving while the
+screen is open still come over realtime, straight from the table:
 
 ```ts
 supabase.channel(`chat:${chatId}`)
@@ -1017,6 +1143,17 @@ supabase.channel(`chat:${chatId}`)
       ({ new: message }) => append(message))
   .subscribe();
 ```
+
+The row from realtime has no `is_mine` — compare `sender_id` with your own id.
+
+### 8.6 Direct table access
+
+Still available, and still governed by the participant-only RLS policies, but the
+function is the easier path: creating a chat over REST takes three writes and the
+first two cannot read their own rows back (a chat is only readable once you are a
+participant), and a chat list needs a per-chat last message and an unread count
+that PostgREST cannot express. `public.chat_overview` is the view that does both —
+`GET /rest/v1/chat_overview?viewer_id=eq.<my-id>&order=last_message_at.desc`.
 
 ---
 

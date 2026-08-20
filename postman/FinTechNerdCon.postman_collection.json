@@ -879,7 +879,7 @@
                 }
               ]
             },
-            "description": "Attendee directory, paged.\n\n- `search` — one term matched against name, nerd number, company and job title (\"wasim raza\", \"00427\", \"simpalm\")\n- `user_type` — `all` for every type, or a configs.id (1 Builder, 2 Operator, 3 Explorer)\n- `guild_id` — optional, narrows to one guild\n- `page` / `per_page` — default 20, max 100\n\nEach card carries `connection.status` (none / pending_sent / pending_received / connected / rejected) so the right button can be drawn without another call. Your own row is never included."
+            "description": "Attendee directory, paged.\n\n- `search` — one term matched against name, nerd number, company and job title (\"wasim raza\", \"00427\", \"simpalm\")\n- `user_type` — `all` for every type, or a configs.id (1 Builder, 2 Operator, 3 Explorer)\n- `guild_id` — optional, narrows to one guild\n- `page` / `per_page` — default 20, max 100\n\nEach card carries `connection.status` (none / pending_sent / pending_received / connected / rejected) so the right button can be drawn without another call. Your own row is never included.\n\nAdmin accounts (`is_admin = true`) are event staff and never appear here — nor as a profile / connection / chat target, and not in `pagination.total` either."
           },
           "event": [
             {
@@ -1351,106 +1351,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('documented status', () => pm.expect([204, 401]).to.include(pm.response.code));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "4. Reference data (direct)",
-      "description": "The same data as the Config function, read straight from the tables. Needs a session; useful when you want to filter server-side.",
-      "item": [
-        {
-          "name": "Guilds",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/rest/v1/guilds?select=id,name,description&order=id",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "rest",
-                "v1",
-                "guilds"
-              ],
-              "query": [
-                {
-                  "key": "select",
-                  "value": "id,name,description"
-                },
-                {
-                  "key": "order",
-                  "value": "id"
-                }
-              ]
-            },
-            "description": "Read-only for all signed-in users."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Configs by type",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/rest/v1/configs?select=id,name&type=eq.user_type&order=id",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "rest",
-                "v1",
-                "configs"
-              ],
-              "query": [
-                {
-                  "key": "select",
-                  "value": "id,name"
-                },
-                {
-                  "key": "type",
-                  "value": "eq.user_type"
-                },
-                {
-                  "key": "order",
-                  "value": "id"
-                }
-              ]
-            },
-            "description": "One table backs several lookups — always filter by `type`: `user_type`, `event-quest`, `event-day`, `stage-type` (also `maintenance`, `sponsor`)."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -2025,101 +1925,44 @@
     },
     {
       "name": "7. Chat",
-      "description": "Creating a chat takes three writes, and the first two must NOT ask for the row back.\n\nA chat is only readable once you are a participant, so `Prefer: return=representation` (what supabase-js sends when you chain `.select()`) fails with **42501** on the chat and participant inserts. Generate the chat id on the client instead — the pre-request script here uses Postman's `{{$guid}}`.\n\nMessages cannot be edited or deleted.",
+      "description": "The four chat endpoints. Run them in order the first time: Create stores `chat_id` for Details and Send.\n\n`other_user_id` comes from **People (directory)** in folder 3.\n\nMembership is checked on every route, so a chat you are not in answers 404. New messages arriving while a screen is open come over realtime on `chat_messages` — these endpoints are for loading and sending.",
       "item": [
         {
-          "name": "1) Create chat",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// The client must own the id, because the inserted row is not readable",
-                  "// until a chat_participants row exists for it.",
-                  "pm.collectionVariables.set('chat_id', pm.variables.replaceIn('{{$guid}}'));"
-                ]
+          "name": "Create chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
               }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/chat/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "chat",
+                "create"
+              ]
             },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('201', () => pm.response.to.have.status(201));",
-                  "pm.test('body is empty (return=minimal)', () => pm.expect(pm.response.text()).to.be.empty);"
-                ]
+            "description": "Start a chat with an attendee — this is the \"Message\" button.\n\nFind-or-create: one direct chat per pair, so tapping twice opens the same conversation (`created` tells you which happened, and the message reads \"Chat opened.\"). No connection request is needed first.\n\n`other_user_id` is set by People (directory) in folder 3.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{other_user_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Prefer",
-                "value": "return=minimal"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/rest/v1/chats",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "rest",
-                "v1",
-                "chats"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"id\": \"{{chat_id}}\",\n  \"is_group\": false\n}"
-            },
-            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| id | uuid | yes here | Generate client-side (`crypto.randomUUID()`) so you know it without reading the row back |\n| is_group | boolean | no | Defaults to false |\n\n`Prefer: return=minimal` is required — asking for the row returns 42501 because the select policy needs you to be a participant, which isn't true yet. In supabase-js: `.insert({...})` with no `.select()`."
-          }
-        },
-        {
-          "name": "2) Add myself as participant",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Prefer",
-                "value": "return=minimal"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/rest/v1/chat_participants",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "rest",
-                "v1",
-                "chat_participants"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"user_id\": \"{{user_id}}\"\n}"
-            },
-            "description": "Also `return=minimal` — same reason. The policy allows the row when `user_id` is you, or when you are already in the chat."
           },
           "event": [
             {
@@ -2127,66 +1970,18 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('201', () => pm.response.to.have.status(201));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "3) Add the other person",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Prefer",
-                "value": "return=minimal"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/rest/v1/chat_participants",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "rest",
-                "v1",
-                "chat_participants"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"user_id\": \"{{other_user_id}}\"\n}"
-            },
-            "description": "Set `other_user_id` from the attendee directory first. Allowed because you are already a participant.\n\nSkipped in automated runs when `other_user_id` is empty."
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.variables.get('other_user_id')) {",
-                  "  console.log('other_user_id not set — skipping');",
-                  "  pm.execution.skipRequest();",
+                  "pm.test('documented status', () => pm.expect([200, 400, 404]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('chat_id', body.data.chat_id);",
+                  "  pm.test('chat + the other person', () => {",
+                  "    pm.expect(body.data.chat_id).to.be.a('string');",
+                  "    pm.expect(body.data).to.have.property('created');",
+                  "    pm.expect(body.data.user.id).to.eql(pm.variables.get('other_user_id'));",
+                  "  });",
+                  "} else {",
+                  "  console.log('Run People (directory) first to set other_user_id:', body.message);",
                   "}"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('documented status', () => pm.expect([201, 409]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2203,27 +1998,32 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/chats?select=id,is_group,created_at,chat_participants(user_id,users(first_name,last_name,profile_image)),chat_messages(body,created_at)&order=created_at.desc",
+              "raw": "{{base_url}}/functions/v1/chat/list?search=&page=1&per_page=20",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "chats"
+                "chat",
+                "list"
               ],
               "query": [
                 {
-                  "key": "select",
-                  "value": "id,is_group,created_at,chat_participants(user_id,users(first_name,last_name,profile_image)),chat_messages(body,created_at)"
+                  "key": "search",
+                  "value": ""
                 },
                 {
-                  "key": "order",
-                  "value": "created_at.desc"
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
                 }
               ]
             },
-            "description": "Only chats you participate in are visible. Embeds the other members and the messages for a chat-list preview."
+            "description": "Every chat I am in, most recently active first, paged.\n\nEach row carries the other person's card, `last_message` (null for a chat with no messages yet) and `unread_count` — messages from them since I last opened it.\n\n`search` matches the other person by name, nerd number, company or job title."
           },
           "event": [
             {
@@ -2232,17 +2032,76 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200', () => pm.response.to.have.status(200));",
-                  "pm.test('the new chat is visible', () => {",
-                  "  const ids = pm.response.json().map((c) => c.id);",
-                  "  pm.expect(ids).to.include(pm.variables.get('chat_id'));",
-                  "});"
+                  "const body = pm.response.json();",
+                  "pm.test('paged chat list', () => {",
+                  "  pm.expect(body.data.chats).to.be.an('array');",
+                  "  pm.expect(body.data.pagination).to.have.property('total');",
+                  "});",
+                  "const first = (body.data.chats || [])[0];",
+                  "if (first) pm.collectionVariables.set('chat_id', first.chat_id);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Send a message",
+          "name": "Chat details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/chat/details/{{chat_id}}?page=1&per_page=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "chat",
+                "details",
+                "{{chat_id}}"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "The chat, the other person, and a page of messages **newest first** — page 1 is what the screen opens on, so reverse the array to render oldest-at-top and fetch page 2 for older history.\n\nOpening a chat marks it read; the `unread_count` in the response is the count from before that, so the badge can be cleared from the same payload.\n\n404 if the chat does not exist or you are not a participant."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 404]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('messages + pagination', () => {",
+                  "    pm.expect(body.data.messages).to.be.an('array');",
+                  "    pm.expect(body.data.pagination).to.have.property('total');",
+                  "  });",
+                  "} else {",
+                  "  console.log('Create a chat first:', body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send message",
           "request": {
             "method": "POST",
             "header": [
@@ -2253,81 +2112,31 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "Prefer",
-                "value": "return=representation"
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/chat_messages",
+              "raw": "{{base_url}}/functions/v1/chat/send/{{chat_id}}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "chat_messages"
+                "chat",
+                "send",
+                "{{chat_id}}"
               ]
             },
+            "description": "Posts a message to a chat I am in and answers with the stored row (`is_mine` is always true here).\n\nUp to 4000 characters; empty is a 400. Sending also marks the chat read for the sender.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"sender_id\": \"{{user_id}}\",\n  \"body\": \"Hello from Postman\"\n}"
-            },
-            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| chat_id | uuid | yes | You must be a participant |\n| sender_id | uuid | yes | Must equal the signed-in user |\n| body | text | yes | |\n\n`return=representation` is fine here — by now you are a participant, so the row is readable."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('201', () => pm.response.to.have.status(201));"
-                ]
+              "raw": "{\n  \"message\": \"Are you going to the keynote?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
             }
-          ]
-        },
-        {
-          "name": "Messages in a chat",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/rest/v1/chat_messages?select=id,body,created_at,sender:users(id,first_name,last_name,profile_image)&chat_id=eq.{{chat_id}}&order=created_at.asc&limit=50",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "rest",
-                "v1",
-                "chat_messages"
-              ],
-              "query": [
-                {
-                  "key": "select",
-                  "value": "id,body,created_at,sender:users(id,first_name,last_name,profile_image)"
-                },
-                {
-                  "key": "chat_id",
-                  "value": "eq.{{chat_id}}"
-                },
-                {
-                  "key": "order",
-                  "value": "created_at.asc"
-                },
-                {
-                  "key": "limit",
-                  "value": "50"
-                }
-              ]
-            },
-            "description": "`sender:users(...)` aliases the embedded sender profile. For live updates subscribe to Realtime INSERTs on `chat_messages` filtered by `chat_id` instead of polling."
           },
           "event": [
             {
@@ -2335,12 +2144,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));",
-                  "pm.test('message is there with its sender', () => {",
-                  "  const rows = pm.response.json();",
-                  "  pm.expect(rows).to.be.an('array').that.is.not.empty;",
-                  "  pm.expect(rows[0].sender).to.be.an('object');",
-                  "});"
+                  "pm.test('documented status', () => pm.expect([200, 400, 404]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('message stored', () => {",
+                  "    pm.expect(body.data.body).to.be.a('string');",
+                  "    pm.expect(body.data.is_mine).to.eql(true);",
+                  "  });",
+                  "} else {",
+                  "  console.log('Send skipped:', pm.response.code, body.message);",
+                  "}"
                 ]
               }
             }
@@ -2955,6 +2768,425 @@
                   "});",
                   "const text = pm.response.json()[0].text;",
                   "console.log(text ? `Banner: ${text}` : 'No announcement set — the client should hide the banner.');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Z. Not used by the app (direct REST)",
+      "description": "Kept for debugging and for anyone poking at the tables directly. The app should call the edge functions instead:\n\n- guilds / configs → **2. Config** (`GET config`, `GET config/sponsors`)\n- chat create / participants / messages → **7. Chat** (`chat/create`, `chat/list`, `chat/details/{id}`, `chat/send/{id}`)\n\nThese still work — the RLS policies allow them — but the function routes do the multi-step writes in one transaction and return the shapes the screens need. See postman/API.md §8.6.",
+      "item": [
+        {
+          "name": "Guilds",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/guilds?select=id,name,description&order=id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "guilds"
+              ],
+              "query": [
+                {
+                  "key": "select",
+                  "value": "id,name,description"
+                },
+                {
+                  "key": "order",
+                  "value": "id"
+                }
+              ]
+            },
+            "description": "Read-only for all signed-in users."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Configs by type",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/configs?select=id,name&type=eq.user_type&order=id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "configs"
+              ],
+              "query": [
+                {
+                  "key": "select",
+                  "value": "id,name"
+                },
+                {
+                  "key": "type",
+                  "value": "eq.user_type"
+                },
+                {
+                  "key": "order",
+                  "value": "id"
+                }
+              ]
+            },
+            "description": "One table backs several lookups — always filter by `type`: `user_type`, `event-quest`, `event-day`, `stage-type` (also `maintenance`, `sponsor`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1) Create chat",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The client must own the id, because the inserted row is not readable",
+                  "// until a chat_participants row exists for it.",
+                  "pm.collectionVariables.set('chat_id', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('body is empty (return=minimal)', () => pm.expect(pm.response.text()).to.be.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=minimal"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chats",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chats"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{chat_id}}\",\n  \"is_group\": false\n}"
+            },
+            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| id | uuid | yes here | Generate client-side (`crypto.randomUUID()`) so you know it without reading the row back |\n| is_group | boolean | no | Defaults to false |\n\n`Prefer: return=minimal` is required — asking for the row returns 42501 because the select policy needs you to be a participant, which isn't true yet. In supabase-js: `.insert({...})` with no `.select()`."
+          }
+        },
+        {
+          "name": "2) Add myself as participant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=minimal"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chat_participants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chat_participants"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"user_id\": \"{{user_id}}\"\n}"
+            },
+            "description": "Also `return=minimal` — same reason. The policy allows the row when `user_id` is you, or when you are already in the chat."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3) Add the other person",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=minimal"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chat_participants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chat_participants"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"user_id\": \"{{other_user_id}}\"\n}"
+            },
+            "description": "Set `other_user_id` from the attendee directory first. Allowed because you are already a participant.\n\nSkipped in automated runs when `other_user_id` is empty."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('other_user_id')) {",
+                  "  console.log('other_user_id not set — skipping');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([201, 409]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My chats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chats?select=id,is_group,created_at,chat_participants(user_id,users(first_name,last_name,profile_image)),chat_messages(body,created_at)&order=created_at.desc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chats"
+              ],
+              "query": [
+                {
+                  "key": "select",
+                  "value": "id,is_group,created_at,chat_participants(user_id,users(first_name,last_name,profile_image)),chat_messages(body,created_at)"
+                },
+                {
+                  "key": "order",
+                  "value": "created_at.desc"
+                }
+              ]
+            },
+            "description": "Only chats you participate in are visible. Embeds the other members and the messages for a chat-list preview."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('the new chat is visible', () => {",
+                  "  const ids = pm.response.json().map((c) => c.id);",
+                  "  pm.expect(ids).to.include(pm.variables.get('chat_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chat_messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chat_messages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"sender_id\": \"{{user_id}}\",\n  \"body\": \"Hello from Postman\"\n}"
+            },
+            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| chat_id | uuid | yes | You must be a participant |\n| sender_id | uuid | yes | Must equal the signed-in user |\n| body | text | yes | |\n\n`return=representation` is fine here — by now you are a participant, so the row is readable."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Messages in a chat",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/chat_messages?select=id,body,created_at,sender:users(id,first_name,last_name,profile_image)&chat_id=eq.{{chat_id}}&order=created_at.asc&limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "chat_messages"
+              ],
+              "query": [
+                {
+                  "key": "select",
+                  "value": "id,body,created_at,sender:users(id,first_name,last_name,profile_image)"
+                },
+                {
+                  "key": "chat_id",
+                  "value": "eq.{{chat_id}}"
+                },
+                {
+                  "key": "order",
+                  "value": "created_at.asc"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "`sender:users(...)` aliases the embedded sender profile. For live updates subscribe to Realtime INSERTs on `chat_messages` filtered by `chat_id` instead of polling."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('message is there with its sender', () => {",
+                  "  const rows = pm.response.json();",
+                  "  pm.expect(rows).to.be.an('array').that.is.not.empty;",
+                  "  pm.expect(rows[0].sender).to.be.an('object');",
+                  "});"
                 ]
               }
             }

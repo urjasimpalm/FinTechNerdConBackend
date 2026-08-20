@@ -9,6 +9,17 @@ import { serviceClient } from "./supabase.ts";
 export const MIN_GUILDS = 1;
 export const MAX_GUILDS = 3;
 
+/**
+ * Admin accounts are event staff, not attendees: they are filtered out of every
+ * attendee-facing response — the directory, a guild's members, profile lookups by
+ * id, and as a target for a connection request or a chat. To an attendee they do
+ * not exist.
+ *
+ * Which means: if a staff member should also appear as an attendee, give them a
+ * second account and leave is_admin false on it.
+ */
+export const ATTENDEE_ONLY = { column: "is_admin", value: false } as const;
+
 const PROFILE_COLUMNS =
   "id, first_name, last_name, email, nerd_number, user_type_config_id, company_name, job_title, profile_image, is_admin, created_at, updated_at";
 
@@ -34,6 +45,19 @@ export const SESSION_PROFILE_SELECT =
   `${PROFILE_COLUMNS}, device_type, device_token, ${USER_TYPE_EMBED}, ${GUILDS_EMBED}`;
 
 type GuildJoin = { guild: { id: number; name: string; description: string | null } | null };
+
+/**
+ * The profile of someone other than the caller: the same shape, minus the things
+ * that are the caller's own business. is_admin is one of them — the app needs the
+ * flag for the signed-in user to decide what to show, nobody else needs it about
+ * anybody else.
+ */
+export function withoutPrivateFields(
+  profile: Record<string, unknown>,
+): Record<string, unknown> {
+  const { is_admin: _isAdmin, ...rest } = profile;
+  return rest;
+}
 
 /** Collapses the user_guilds join rows into `guilds`, ordered by id. */
 export function shapeProfile(row: Record<string, unknown>): Record<string, unknown> {

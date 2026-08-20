@@ -5,7 +5,7 @@
 // guilds, and where the caller stands with them.
 import { fail, integer, ok } from "../_shared/http.ts";
 import { fetchPage, likeTerm, pageMeta, readPage } from "../_shared/pagination.ts";
-import { PERSON_SELECT, shapeProfile } from "../_shared/profile.ts";
+import { ATTENDEE_ONLY, PERSON_SELECT, shapeProfile } from "../_shared/profile.ts";
 import { statusesFor } from "../_shared/connections.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
@@ -57,6 +57,9 @@ async function listPeople(
       .from("users")
       .select(PERSON_SELECT, { count: "exact", head: headOnly })
       .neq("id", options.viewerId)
+      // Staff accounts are not attendees, so they are not in the directory — and
+      // filtering here rather than after paging keeps `total` honest.
+      .eq(ATTENDEE_ONLY.column, ATTENDEE_ONLY.value)
       .order("first_name")
       .order("last_name")
       .order("id");
