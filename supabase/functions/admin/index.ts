@@ -36,7 +36,7 @@ const ROUTES: Record<string, string> = {
 // The announcement is a single row pinned to this id.
 const ANNOUNCEMENT_ID = 1;
 const MAX_ANNOUNCEMENT_LENGTH = 2000;
-const ANNOUNCEMENT_COLUMNS = "text, updated_by, updated_at";
+const ANNOUNCEMENT_COLUMNS = "text, map_image, updated_by, updated_at";
 
 type Entry = { email: string; first_name: string | null; last_name: string | null };
 
@@ -263,30 +263,55 @@ async function saveAnnouncement(
   body: Record<string, unknown>,
   adminId: string,
 ): Promise<Response> {
-  // Empty is a real value — it clears the banner — so only a missing or
-  // non-string `text` is rejected. null is treated as clearing it.
-  const raw = body.text === null ? "" : body.text;
-  if (raw === undefined) {
-    return fail('"text" is required. Send an empty string to clear the announcement.', 400);
+  const updates: Record<string, unknown> = { id: ANNOUNCEMENT_ID, updated_by: adminId };
+  let value: string | null = null;
+
+  // Both fields are optional, so the banner and the map can be edited
+  // independently — but sending neither is a no-op worth reporting.
+  if ("text" in body) {
+    // Empty is a real value — it clears the banner — so only a non-string is
+    // rejected. null is treated as clearing it.
+    const raw = body.text === null ? "" : body.text;
+    if (typeof raw !== "string") {
+      return fail('"text" must be a string.', 400);
+    }
+    // Trailing whitespace only would render as a blank banner rather than none.
+    value = raw.trim();
+    if (value.length > MAX_ANNOUNCEMENT_LENGTH) {
+      return fail(
+        `Announcement must be ${MAX_ANNOUNCEMENT_LENGTH} characters or fewer.`,
+        400,
+      );
+    }
+    updates.text = value;
   }
-  if (typeof raw !== "string") {
-    return fail('"text" must be a string.', 400);
+
+  // The Home screen's floor plan. A public URL, not the bytes — upload the image
+  // to a storage bucket first, the same as public.sponsors.profile_image. null
+  // removes the map.
+  if ("map_image" in body) {
+    const raw = body.map_image;
+    if (raw === null || (typeof raw === "string" && raw.trim() === "")) {
+      updates.map_image = null;
+    } else if (typeof raw !== "string") {
+      return fail('"map_image" must be a URL string, or null to remove it.', 400);
+    } else if (!/^https?:\/\//i.test(raw.trim())) {
+      return fail('"map_image" must be an http(s) URL, or null to remove it.', 400);
+    } else {
+      updates.map_image = raw.trim();
+    }
   }
-  // Trailing whitespace only would render as a blank banner rather than none.
-  const value = raw.trim();
-  if (value.length > MAX_ANNOUNCEMENT_LENGTH) {
+
+  if (!("text" in updates) && !("map_image" in updates)) {
     return fail(
-      `Announcement must be ${MAX_ANNOUNCEMENT_LENGTH} characters or fewer.`,
+      'Send "text" (an empty string clears the banner) and/or "map_image".',
       400,
     );
   }
 
   const { data, error } = await serviceClient()
     .from("announcements")
-    .upsert(
-      { id: ANNOUNCEMENT_ID, text: value, updated_by: adminId },
-      { onConflict: "id" },
-    )
+    .upsert(updates, { onConflict: "id" })
     .select(ANNOUNCEMENT_COLUMNS)
     .single();
 
@@ -296,7 +321,13 @@ async function saveAnnouncement(
   }
 
   return ok(
-    value ? "Announcement saved." : "Announcement cleared.",
+    // "map updated" when only the map changed, so the response reflects what the
+    // admin actually did.
+    value === null
+      ? "Map updated."
+      : value
+      ? "Announcement saved."
+      : "Announcement cleared.",
     data,
   );
 }

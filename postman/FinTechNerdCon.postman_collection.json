@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FinTechNerdCon Backend",
-    "description": "Front-end API collection for the FinTechNerdCon Supabase backend.\n\nMirrors postman/API.md. Two kinds of endpoint:\n\n- `/functions/v1/...` edge functions. verify-email, register, login, forgot-password, reset-password and config are public (anon key only); `user/profile` and the `admin/*` routes need the access token from login\n- `/rest/v1/...` auto-generated REST over the tables, guarded by row-level security — needs the access token from login\n\n## Setup\n\n1. Import the environment file next to this collection (`FinTechNerdCon.postman_environment.json`) and select it.\n2. For a deployed project set `base_url` to `https://<project-ref>.supabase.co` and `anon_key` to the project's anon/publishable key.\n3. Run **1. Auth → Login**. Its test script stores `access_token`, `refresh_token` and `user_id` as collection variables, so every later request is authenticated automatically.\n\nThe collection sends `Authorization: Bearer {{access_token}}` by default; the public endpoints override this with no auth.\n\nAssertions accept every status the API documents for a request (e.g. Register passes on 201, 403 and 409), so a full collection run stays green whether or not the test email is on the attendee list.",
+    "description": "Front-end API collection for the FinTechNerdCon Supabase backend.\n\nMirrors postman/API.md. Two kinds of endpoint:\n\n- `/functions/v1/...` edge functions. verify-email, register, login, forgot-password, reset-password and config are public (anon key only); `user/profile` and the `admin/*` routes need the access token from login\n- `/rest/v1/...` auto-generated REST over the tables, guarded by row-level security \u2014 needs the access token from login\n\n## Setup\n\n1. Import the environment file next to this collection (`FinTechNerdCon.postman_environment.json`) and select it.\n2. For a deployed project set `base_url` to `https://<project-ref>.supabase.co` and `anon_key` to the project's anon/publishable key.\n3. Run **1. Auth \u2192 Login**. Its test script stores `access_token`, `refresh_token` and `user_id` as collection variables, so every later request is authenticated automatically.\n\nThe collection sends `Authorization: Bearer {{access_token}}` by default; the public endpoints override this with no auth.\n\nAssertions accept every status the API documents for a request (e.g. Register passes on 201, 403 and 409), so a full collection run stays green whether or not the test email is on the attendee list.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -128,18 +128,30 @@
     {
       "key": "nerd_number",
       "value": "",
-      "description": "Set by GET user/profile — the caller's badge number, e.g. 00427."
+      "description": "Set by GET user/profile \u2014 the caller's badge number, e.g. 00427."
     },
     {
       "key": "request_id",
       "value": "",
       "description": "Set by the connection request / list requests tests."
+    },
+    {
+      "key": "qr_code",
+      "value": "",
+      "description": "A slug from `select * from public.mint_qr_codes(...)`. Printed as https://<app>/q/<slug>.",
+      "type": "string"
+    },
+    {
+      "key": "invite_agenda_id",
+      "value": "",
+      "description": "An agenda id with is_invite_only = true. Captured by 'Agenda (filtered)' when one exists.",
+      "type": "string"
     }
   ],
   "item": [
     {
       "name": "1. Auth",
-      "description": "Register, login and session handling. All public — anon key only, no bearer token.",
+      "description": "Register, login and session handling. All public \u2014 anon key only, no bearer token.",
       "item": [
         {
           "name": "Verify email (on attendee list?)",
@@ -173,7 +185,7 @@
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{test_email}}\"\n}"
             },
-            "description": "Registration is invite-only — the email must already be in `email_stack`. Case-insensitive and trimmed.\n\n| Parameter | Type | Required |\n| --- | --- | --- |\n| email | string | yes |\n\nEvery response has the same three keys: `status` (`Success`/`Error`), `message`, `data`.\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"This email is on the attendee list.\",\n  \"data\": { \"email_exist\": true }\n}\n```\n\n- **200** `Success` with `data.email_exist: true` — on the list\n- **200** `Success` with `data.email_exist: false` — not on the list. A miss is not an error: the lookup worked, the answer is just no. Branch on `data.email_exist`\n- **400** `Error` — email missing, or the body isn't JSON\n- **405** `Error` — must be POST\n- **500** `Error` — lookup failed\n\n`data` is `null` on every error path, so the three keys are always safe to read.\n\nOptional pre-screen: Register runs the same check itself and returns 403 `email_in_stack: false` when the email isn't on the list.\n\nThe SQL helper behind this (`public.verify_email`) is granted to the service role only, so this function is the only way to ask the question."
+            "description": "Registration is invite-only \u2014 the email must already be in `email_stack`. Case-insensitive and trimmed.\n\n| Parameter | Type | Required |\n| --- | --- | --- |\n| email | string | yes |\n\nEvery response has the same three keys: `status` (`Success`/`Error`), `message`, `data`.\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"This email is on the attendee list.\",\n  \"data\": { \"email_exist\": true }\n}\n```\n\n- **200** `Success` with `data.email_exist: true` \u2014 on the list\n- **200** `Success` with `data.email_exist: false` \u2014 not on the list. A miss is not an error: the lookup worked, the answer is just no. Branch on `data.email_exist`\n- **400** `Error` \u2014 email missing, or the body isn't JSON\n- **405** `Error` \u2014 must be POST\n- **500** `Error` \u2014 lookup failed\n\n`data` is `null` on every error path, so the three keys are always safe to read.\n\nOptional pre-screen: Register runs the same check itself and returns 403 `email_in_stack: false` when the email isn't on the list.\n\nThe SQL helper behind this (`public.verify_email`) is granted to the service role only, so this function is the only way to ask the question."
           },
           "event": [
             {
@@ -189,7 +201,7 @@
                   "  pm.expect(body.data.email_exist).to.be.a('boolean');",
                   "});",
                   "if (!pm.response.json().data.email_exist) {",
-                  "  console.log(pm.variables.get('test_email') + ' is not on the attendee list — Register will return 403.');",
+                  "  console.log(pm.variables.get('test_email') + ' is not on the attendee list \u2014 Register will return 403.');",
                   "}"
                 ]
               }
@@ -228,7 +240,7 @@
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\",\n  \"guild_ids\": [{{guild_id}}, {{guild_id_2}}],\n  \"user_type_config_id\": {{user_type_config_id}},\n  \"company_name\": \"Simpalm\",\n  \"job_title\": \"Engineer\"\n}"
             },
-            "description": "| Parameter | Type | Required | Constraints |\n| --- | --- | --- | --- |\n| email | string | yes | Valid email, must be on the attendee list |\n| password | string | yes | Min 8 characters |\n| first_name | string | yes | Non-empty |\n| last_name | string | yes | Non-empty |\n| guild_ids | integer[] | **yes** | 1 to 3 guilds.id values. A single `guild_id` is still accepted as a one-guild selection |\n| user_type_config_id | integer | no | configs.id where type = 'user_type' |\n| company_name | string | no | |\n| job_title | string | no | |\n| profile_image | string | no | URL |\n| device_type | integer | no | Push delivery |\n| device_token | string | no | FCM/APNs token |\n\nResponses:\n\n- **201** — created; body is `{ success, message }` only, with no session or profile\n- **403** `email_in_stack: false` — not on the attendee list, nothing created\n- **409** — already registered, send the user to Login\n- **400** — missing/invalid field, password under 8 chars, no guilds or more than 3, bad guild_ids/user_type_config_id\n\nRegister hands back nothing but the status and message — run Login next to get the token.\n\nGuilds are chosen at sign-up: at least 1, at most 3. Nothing is created if the selection is rejected."
+            "description": "| Parameter | Type | Required | Constraints |\n| --- | --- | --- | --- |\n| email | string | yes | Valid email, must be on the attendee list |\n| password | string | yes | Min 8 characters |\n| first_name | string | yes | Non-empty |\n| last_name | string | yes | Non-empty |\n| guild_ids | integer[] | **yes** | 1 to 3 guilds.id values. A single `guild_id` is still accepted as a one-guild selection |\n| user_type_config_id | integer | no | configs.id where type = 'user_type' |\n| company_name | string | no | |\n| job_title | string | no | |\n| profile_image | string | no | URL |\n| device_type | integer | no | Push delivery |\n| device_token | string | no | FCM/APNs token |\n\nResponses:\n\n- **201** \u2014 created; body is `{ success, message }` only, with no session or profile\n- **403** `email_in_stack: false` \u2014 not on the attendee list, nothing created\n- **409** \u2014 already registered, send the user to Login\n- **400** \u2014 missing/invalid field, password under 8 chars, no guilds or more than 3, bad guild_ids/user_type_config_id\n\nRegister hands back nothing but the status and message \u2014 run Login next to get the token.\n\nGuilds are chosen at sign-up: at least 1, at most 3. Nothing is created if the selection is rejected."
           },
           "event": [
             {
@@ -285,7 +297,7 @@
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\"\n}"
             },
-            "description": "| Parameter | Type | Required |\n| --- | --- | --- |\n| email | string | yes |\n| password | string | yes |\n\nResponses:\n\n- **200** `{ success, message, data: { token, token_type, expires_in, expires_at, refresh_token, user } }`\n- **401** `Invalid email or password.` — returned for both a wrong password and an unknown email, on purpose. Do not try to tell them apart in the UI\n- **400** — email or password missing\n- **405** — must be POST\n\nThe test script stores `access_token`, `refresh_token` and `user_id` for the rest of the collection."
+            "description": "| Parameter | Type | Required |\n| --- | --- | --- |\n| email | string | yes |\n| password | string | yes |\n\nResponses:\n\n- **200** `{ success, message, data: { token, token_type, expires_in, expires_at, refresh_token, user } }`\n- **401** `Invalid email or password.` \u2014 returned for both a wrong password and an unknown email, on purpose. Do not try to tell them apart in the UI\n- **400** \u2014 email or password missing\n- **405** \u2014 must be POST\n\nThe test script stores `access_token`, `refresh_token` and `user_id` for the rest of the collection."
           },
           "event": [
             {
@@ -340,7 +352,7 @@
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{test_email}}\"\n}"
             },
-            "description": "Step 1 of the password reset — emails a 6-digit code.\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | yes | Case-insensitive, trimmed |\n| redirect_to | string | no | Only for the web/link variant |\n\n- **200** `{ status: \"Success\", message, data: { email_sent: true } }`\n- **400** `Error` — email missing or malformed\n- **429** `Error` — per-address email throttle; the message names the wait\n\n**An unknown email also returns 200.** Deliberate: any other response would let someone discover which addresses have accounts. So the UI should say \"check your email\" and must not branch on whether the account exists.\n\nLocally the mail lands in Mailpit: http://127.0.0.1:54324 — copy the 6-digit code into the `reset_code` variable, then send **Reset password**.\n\nNote each new request invalidates the previous code, so a whole-folder run can't finish the reset in one pass: this request re-issues the code before Reset password runs. Send the two by hand, in order."
+            "description": "Step 1 of the password reset \u2014 emails a 6-digit code.\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | yes | Case-insensitive, trimmed |\n| redirect_to | string | no | Only for the web/link variant |\n\n- **200** `{ status: \"Success\", message, data: { email_sent: true } }`\n- **400** `Error` \u2014 email missing or malformed\n- **429** `Error` \u2014 per-address email throttle; the message names the wait\n\n**An unknown email also returns 200.** Deliberate: any other response would let someone discover which addresses have accounts. So the UI should say \"check your email\" and must not branch on whether the account exists.\n\nLocally the mail lands in Mailpit: http://127.0.0.1:54324 \u2014 copy the 6-digit code into the `reset_code` variable, then send **Reset password**.\n\nNote each new request invalidates the previous code, so a whole-folder run can't finish the reset in one pass: this request re-issues the code before Reset password runs. Send the two by hand, in order."
           },
           "event": [
             {
@@ -396,7 +408,7 @@
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"token\": \"{{reset_code}}\",\n  \"password\": \"{{new_password}}\"\n}"
             },
-            "description": "Step 2 — exchanges the code for a new password. Owning the code is the authorisation, so no session is needed.\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | with `token` | Address the code was sent to |\n| token | string | yes* | The 6-digit code from the email |\n| token_hash | string | yes* | Instead of email+token: the `token` query param from the emailed link (web flow) |\n| password | string | yes | New password, min 8 characters |\n\n\\* Send either `email` + `token`, or `token_hash` alone.\n\n- **200** `{ status: \"Success\", message, data: { token, token_type, expires_in, expires_at, refresh_token, user } }` — `data` matches Login's, and the test script stores the session\n- **400** `Error` — invalid/expired/used code, password under 8 chars, missing fields, or \"New password should be different from the old password.\"\n- **405** `Error` — must be POST\n\nCodes are single-use; wrong, used and expired all share one message on purpose. Requesting a new code invalidates the previous one, so use the newest email.\n\nSkipped unless `reset_code` is set — fill it in from the email that **Forgot password** triggers, then send this request on its own (a folder run would re-issue the code first and invalidate it).\n\n**This changes the account's password.** Afterwards `test_password` is stale — set it to `new_password` (or reset it back), otherwise Login will start failing.\n\nGuards and chained values are read with `pm.variables.get`, so `reset_code` works whether you set it as a collection variable, an environment variable, or with `newman --env-var`."
+            "description": "Step 2 \u2014 exchanges the code for a new password. Owning the code is the authorisation, so no session is needed.\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | with `token` | Address the code was sent to |\n| token | string | yes* | The 6-digit code from the email |\n| token_hash | string | yes* | Instead of email+token: the `token` query param from the emailed link (web flow) |\n| password | string | yes | New password, min 8 characters |\n\n\\* Send either `email` + `token`, or `token_hash` alone.\n\n- **200** `{ status: \"Success\", message, data: { token, token_type, expires_in, expires_at, refresh_token, user } }` \u2014 `data` matches Login's, and the test script stores the session\n- **400** `Error` \u2014 invalid/expired/used code, password under 8 chars, missing fields, or \"New password should be different from the old password.\"\n- **405** `Error` \u2014 must be POST\n\nCodes are single-use; wrong, used and expired all share one message on purpose. Requesting a new code invalidates the previous one, so use the newest email.\n\nSkipped unless `reset_code` is set \u2014 fill it in from the email that **Forgot password** triggers, then send this request on its own (a folder run would re-issue the code first and invalidate it).\n\n**This changes the account's password.** Afterwards `test_password` is stale \u2014 set it to `new_password` (or reset it back), otherwise Login will start failing.\n\nGuards and chained values are read with `pm.variables.get`, so `reset_code` works whether you set it as a collection variable, an environment variable, or with `newman --env-var`."
           },
           "event": [
             {
@@ -405,7 +417,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (!pm.variables.get('reset_code')) {",
-                  "  console.log('reset_code not set — skipping. Run Forgot password, take the code from the email, set reset_code, then send this.');",
+                  "  console.log('reset_code not set \u2014 skipping. Run Forgot password, take the code from the email, set reset_code, then send this.');",
                   "  pm.execution.skipRequest();",
                   "}"
                 ]
@@ -427,7 +439,7 @@
                   "    pm.expect(body.status).to.eql('Success');",
                   "    pm.expect(body.data.token).to.be.a('string');",
                   "  });",
-                  "  console.log('Password changed to new_password. Update test_password to match, or Login will now fail. reset_code cleared — codes are single-use.');",
+                  "  console.log('Password changed to new_password. Update test_password to match, or Login will now fail. reset_code cleared \u2014 codes are single-use.');",
                   "} else {",
                   "  console.log('reset-password:', pm.response.code, body.message);",
                   "}"
@@ -474,7 +486,7 @@
               "mode": "raw",
               "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
             },
-            "description": "Access tokens expire after 1 hour (`expires_in`). Handled automatically by supabase-js when you call `setSession` — this request is the raw equivalent for clients that store tokens themselves.\n\nReturns a fresh `access_token` and `refresh_token`; the old refresh token is consumed."
+            "description": "Access tokens expire after 1 hour (`expires_in`). Handled automatically by supabase-js when you call `setSession` \u2014 this request is the raw equivalent for clients that store tokens themselves.\n\nReturns a fresh `access_token` and `refresh_token`; the old refresh token is consumed."
           },
           "event": [
             {
@@ -527,7 +539,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.variables.get('allow_destructive') !== 'true') {",
-                  "  console.log('Skipping Logout — set allow_destructive to true to run it.');",
+                  "  console.log('Skipping Logout \u2014 set allow_destructive to true to run it.');",
                   "  pm.execution.skipRequest();",
                   "}"
                 ]
@@ -548,7 +560,7 @@
     },
     {
       "name": "2. Config",
-      "description": "Lookup lists for pickers. Public — the register screen needs guilds and user types before the user has a token.\n\nKeys in `data` are the literal `configs.type` values, so hyphenated ones need bracket access: `data[\"event-quest\"]`.\n\nResponses carry `Cache-Control: public, max-age=300` — fetch once at app start.",
+      "description": "Lookup lists for pickers. Public \u2014 the register screen needs guilds and user types before the user has a token.\n\nKeys in `data` are the literal `configs.type` values, so hyphenated ones need bracket access: `data[\"event-quest\"]`.\n\nResponses carry `Cache-Control: public, max-age=300` \u2014 fetch once at app start.",
       "item": [
         {
           "name": "All config",
@@ -646,7 +658,7 @@
     },
     {
       "name": "3. Profile, people & connections",
-      "description": "My profile, the attendee directory, connection requests and guild membership — all through the `user` edge function, which resolves the caller from the bearer token.\n\nRun them in order the first time: People (directory) stores `other_user_id` for the profile and connection requests.\n\nDirect REST equivalents (filtering the users table yourself) are documented in postman/API.md §4.7; only \"Delete my account\" is kept here, because no function covers it yet.",
+      "description": "My profile, the attendee directory, connection requests and guild membership \u2014 all through the `user` edge function, which resolves the caller from the bearer token.\n\nRun them in order the first time: People (directory) stores `other_user_id` for the profile and connection requests.\n\nDirect REST equivalents (filtering the users table yourself) are documented in postman/API.md \u00a74.7; only \"Delete my account\" is kept here, because no function covers it yet.",
       "item": [
         {
           "name": "My profile",
@@ -670,7 +682,7 @@
                 "profile"
               ]
             },
-            "description": "Everything a profile screen needs in one call, in the { status, message, data } envelope:\n\n- the editable columns\n- `nerd_number` — the badge number, e.g. \"00427\", issued at registration and never editable\n- `user_type` as `{ id, name, description }` (null when unset), plus `guilds` — the user's 1 to 3 guilds in the same shape\n- `profile_image` as a full public URL (or null)\n- `total_xp` and `rank` from the leaderboard — 0 / null until a mission is completed\n\nThe row is resolved from the bearer token, so there is no id to pass. 401 if the token is missing or expired (the anon key alone is not enough)."
+            "description": "Everything a profile screen needs in one call, in the { status, message, data } envelope:\n\n- the editable columns\n- `nerd_number` \u2014 the badge number, e.g. \"00427\", issued at registration and never editable\n- `user_type` as `{ id, name, description }` (null when unset), plus `guilds` \u2014 the user's 1 to 3 guilds in the same shape\n- `profile_image` as a full public URL (or null)\n- `total_xp` and `rank` from the leaderboard \u2014 0 / null until a mission is completed\n\nThe row is resolved from the bearer token, so there is no id to pass. 401 if the token is missing or expired (the anon key alone is not enough)."
           },
           "event": [
             {
@@ -766,7 +778,7 @@
                 }
               ]
             },
-            "description": "Partial update of my own profile, as multipart/form-data so the picked image goes in the same request. Do not set Content-Type by hand — Postman adds the boundary.\n\nEditable fields (all optional, send only what you are changing):\n\n| Field | Notes |\n| --- | --- |\n| first_name | Cannot be empty |\n| last_name | Cannot be empty |\n| user_type_config_id | `configs.id` where type = 'user_type' — from GET All config |\n| guild_ids | 1 to 3 `guilds.id` values — repeat the row per guild, or send `2,3` in one value. Replaces the whole selection; it cannot be emptied, so untick to keep the current one |\n| company_name | Empty value clears it |\n| job_title | Empty value clears it |\n| profile_image | File part. Uploaded to the `profile-images` bucket under `<user-id>/<timestamp>.<ext>`; the saved value is its public URL and the previous upload is deleted |\n\nUntick a row to leave that field alone. A form cannot carry null, so an empty value (or the literal `null`) clears an optional field, and an unselected file part means \"keep the current picture\".\n\nnerd_number, email and is_admin are ignored if sent — they are not the user's to change. device_type / device_token are not editable here either; patch those on `/rest/v1/users?id=eq.{{user_id}}`.\n\nThe response is the same shape as GET My profile, so the screen can re-render from it.\n\n## Sending JSON instead\n\nSwitch Body to **raw / JSON** and the same fields work, with `null` to clear one. There, `profile_image` takes a data URI (`data:image/jpeg;base64,…`) to upload, an https URL to point at an image hosted elsewhere, or null to remove it."
+            "description": "Partial update of my own profile, as multipart/form-data so the picked image goes in the same request. Do not set Content-Type by hand \u2014 Postman adds the boundary.\n\nEditable fields (all optional, send only what you are changing):\n\n| Field | Notes |\n| --- | --- |\n| first_name | Cannot be empty |\n| last_name | Cannot be empty |\n| user_type_config_id | `configs.id` where type = 'user_type' \u2014 from GET All config |\n| guild_ids | 1 to 3 `guilds.id` values \u2014 repeat the row per guild, or send `2,3` in one value. Replaces the whole selection; it cannot be emptied, so untick to keep the current one |\n| company_name | Empty value clears it |\n| job_title | Empty value clears it |\n| profile_image | File part. Uploaded to the `profile-images` bucket under `<user-id>/<timestamp>.<ext>`; the saved value is its public URL and the previous upload is deleted |\n\nUntick a row to leave that field alone. A form cannot carry null, so an empty value (or the literal `null`) clears an optional field, and an unselected file part means \"keep the current picture\".\n\nnerd_number, email and is_admin are ignored if sent \u2014 they are not the user's to change. device_type / device_token are not editable here either; patch those on `/rest/v1/users?id=eq.{{user_id}}`.\n\nThe response is the same shape as GET My profile, so the screen can re-render from it.\n\n## Sending JSON instead\n\nSwitch Body to **raw / JSON** and the same fields work, with `null` to clear one. There, `profile_image` takes a data URI (`data:image/jpeg;base64,\u2026`) to upload, an https URL to point at an image hosted elsewhere, or null to remove it."
           },
           "event": [
             {
@@ -838,7 +850,7 @@
                 }
               ]
             },
-            "description": "Attendee directory, paged.\n\n- `search` — one term matched against name, nerd number, company and job title (\"wasim raza\", \"00427\", \"simpalm\")\n- `user_type` — `all` for every type, or a configs.id (1 Builder, 2 Operator, 3 Explorer)\n- `guild_id` — optional, narrows to one guild\n- `page` / `per_page` — default 20, max 100\n\nEach card carries `connection.status` (none / pending_sent / pending_received / connected / rejected) so the right button can be drawn without another call. Your own row is never included.\n\nAdmin accounts (`is_admin = true`) are event staff and never appear here — nor as a profile / connection / chat target, and not in `pagination.total` either."
+            "description": "Attendee directory, paged.\n\n- `search` \u2014 one term matched against name, nerd number, company and job title (\"wasim raza\", \"00427\", \"simpalm\")\n- `user_type` \u2014 `all` for every type, or a configs.id (1 Builder, 2 Operator, 3 Explorer)\n- `guild_id` \u2014 optional, narrows to one guild\n- `page` / `per_page` \u2014 default 20, max 100\n\nEach card carries `connection.status` (none / pending_sent / pending_received / connected / rejected) so the right button can be drawn without another call. Your own row is never included.\n\nAdmin accounts (`is_admin = true`) are event staff and never appear here \u2014 nor as a profile / connection / chat target, and not in `pagination.total` either."
           },
           "event": [
             {
@@ -859,7 +871,7 @@
                   "  pm.collectionVariables.set('other_user_id', first.id);",
                   "  console.log('other_user_id =', first.id, first.first_name, first.last_name);",
                   "} else {",
-                  "  console.log('No other attendees yet — register a second account to try the connection routes.');",
+                  "  console.log('No other attendees yet \u2014 register a second account to try the connection routes.');",
                   "}"
                 ]
               }
@@ -1011,7 +1023,7 @@
                 }
               ]
             },
-            "description": "`status=`\n\n- `pending` (default) — requests waiting on **you**\n- `sent` — requests you sent, unanswered\n- `accepted` — your connections\n- `rejected` — answered no\n\n`search` narrows by the other person's name, company, job title or nerd number. Each row is `{ request_id, status, created_at, responded_at, user }`, where `user` is the same card as the directory."
+            "description": "`status=`\n\n- `pending` (default) \u2014 requests waiting on **you**\n- `sent` \u2014 requests you sent, unanswered\n- `accepted` \u2014 your connections\n- `rejected` \u2014 answered no\n\n`search` narrows by the other person's name, company, job title or nerd number. Each row is `{ request_id, status, created_at, responded_at, user }`, where `user` is the same card as the directory."
           },
           "event": [
             {
@@ -1069,7 +1081,7 @@
                 }
               }
             },
-            "description": "One route for both answers: send `\"action\": \"accept\"` or `\"action\": \"reject\"`. `{ \"user_id\": \"...\" }` works instead of `request_id`, and `?action=reject` on the query string works instead of putting it in the body.\n\nOnly the person who **received** a request can answer it (403 otherwise), and only while it is pending (409 if already answered).\n\nRun \"My requests / connections\" with status=pending first — its test stores `request_id`."
+            "description": "One route for both answers: send `\"action\": \"accept\"` or `\"action\": \"reject\"`. `{ \"user_id\": \"...\" }` works instead of `request_id`, and `?action=reject` on the query string works instead of putting it in the body.\n\nOnly the person who **received** a request can answer it (403 otherwise), and only while it is pending (409 if already answered).\n\nRun \"My requests / connections\" with status=pending first \u2014 its test stores `request_id`."
           },
           "event": [
             {
@@ -1178,7 +1190,7 @@
                 }
               }
             },
-            "description": "One route for both: send `\"action\": \"join\"` or `\"action\": \"leave\"` (or `?action=leave` on the query string).\n\nEdits the same 1–3 selection the profile shows, and answers with the guilds you belong to afterwards.\n\n409s: already in it / not in it, **at most 3 guilds** on join, and at least 1 on leave."
+            "description": "One route for both: send `\"action\": \"join\"` or `\"action\": \"leave\"` (or `?action=leave` on the query string).\n\nEdits the same 1\u20133 selection the profile shows, and answers with the guilds you belong to afterwards.\n\n409s: already in it / not in it, **at most 3 guilds** on join, and at least 1 on leave."
           },
           "event": [
             {
@@ -1263,7 +1275,7 @@
           ]
         },
         {
-          "name": "Delete my account (incomplete — see description)",
+          "name": "Delete my account (incomplete \u2014 see description)",
           "request": {
             "method": "DELETE",
             "header": [
@@ -1289,7 +1301,7 @@
                 }
               ]
             },
-            "description": "**Known gap.** This returns 204 and removes the profile row, but the `auth.users` record survives (the cascade only runs the other way), so that email can never be re-registered.\n\nDon't ship this as the delete-account button — it needs an edge function that removes both.\n\nSkipped unless `allow_destructive` is `true`, so a whole-collection run doesn't wipe your test account."
+            "description": "**Known gap.** This returns 204 and removes the profile row, but the `auth.users` record survives (the cascade only runs the other way), so that email can never be re-registered.\n\nDon't ship this as the delete-account button \u2014 it needs an edge function that removes both.\n\nSkipped unless `allow_destructive` is `true`, so a whole-collection run doesn't wipe your test account."
           },
           "event": [
             {
@@ -1298,7 +1310,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.variables.get('allow_destructive') !== 'true') {",
-                  "  console.log('Skipping account deletion — set allow_destructive to true to run it.');",
+                  "  console.log('Skipping account deletion \u2014 set allow_destructive to true to run it.');",
                   "  pm.execution.skipRequest();",
                   "}"
                 ]
@@ -1318,11 +1330,11 @@
       ]
     },
     {
-      "name": "5. Missions & leaderboard",
-      "description": "`missions` is the read-only catalog. `user_missions` holds your own progress (one row per user + mission). `leaderboard` is a view over completed missions and shows every attendee.\n\n`points_awarded` is written by the client, so totals are only as trustworthy as the app.",
+      "name": "4. Home",
+      "description": "The Home screen in one call: announcement banner, floor-plan map, and the quick-start card (one item at a time, resolved server-side).",
       "item": [
         {
-          "name": "Mission catalog",
+          "name": "Home",
           "request": {
             "method": "GET",
             "header": [
@@ -1332,31 +1344,18 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/missions?select=id,title,description,points&is_active=eq.true&order=id",
+              "raw": "{{base_url}}/functions/v1/user/home",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "missions"
-              ],
-              "query": [
-                {
-                  "key": "select",
-                  "value": "id,title,description,points"
-                },
-                {
-                  "key": "is_active",
-                  "value": "eq.true"
-                },
-                {
-                  "key": "order",
-                  "value": "id"
-                }
+                "user",
+                "home"
               ]
             },
-            "description": "The mission catalog, read-only for all signed-in users. Columns: id, title, description, points, is_active.\n\nFilter on `is_active=eq.true` so retired missions don't show up in the app."
+            "description": "Announcement text, `map_image` (floor plan URL, or null), `quick_start` and `stats`.\n\n`quick_start.step` is `save_sessions` until 3 events are on the schedule, then `first_connection` until there is one accepted connection, then **null** \u2014 hide the card.\n\nEmpty `announcement.text` means no banner; null `map_image` means no map. Neither is an error."
           },
           "event": [
             {
@@ -1364,14 +1363,27 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('home payload', () => {",
+                  "  pm.expect(body.data).to.have.property('announcement');",
+                  "  pm.expect(body.data).to.have.property('stats');",
+                  "});",
+                  "const qs = body.data.quick_start;",
+                  "console.log('quick_start:', qs ? qs.step + ' ' + qs.progress + '/' + qs.target : 'done \u2014 card hidden');"
                 ]
               }
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "name": "5. Missions, QR codes & leaderboard",
+      "description": "XP is awarded **server-side only**. Saving a session and accepting a connection award their missions through database triggers; scanning a QR code awards through `POST user/qr/scan`. There is no route that completes a mission on request, and `user_missions` is no longer client-writable (a REST write returns 42501).",
+      "item": [
         {
-          "name": "My mission progress",
+          "name": "Missions with my progress",
           "request": {
             "method": "GET",
             "header": [
@@ -1381,27 +1393,19 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/user_missions?select=*,missions(title,points)&order=created_at.desc",
+              "raw": "{{base_url}}/functions/v1/user/mission/list",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "user_missions"
-              ],
-              "query": [
-                {
-                  "key": "select",
-                  "value": "*,missions(title,points)"
-                },
-                {
-                  "key": "order",
-                  "value": "created_at.desc"
-                }
+                "user",
+                "mission",
+                "list"
               ]
             },
-            "description": "RLS already limits this to your own rows — no `user_id` filter needed."
+            "description": "The catalog plus my progress: `is_completed`, `times_completed` (the \"Times Completed\" counter), `xp_earned`, `remaining` and a `how_to_earn` hint.\n\n`summary.mission_xp` counts missions only; `summary.total_xp` also counts session check-ins, so the two are not expected to match.\n\n`include_inactive=true` also returns missions with `is_active = false`."
           },
           "event": [
             {
@@ -1409,14 +1413,22 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('mission list', () => {",
+                  "  pm.expect(body.data.missions).to.be.an('array');",
+                  "  pm.expect(body.data.summary).to.have.property('total');",
+                  "});",
+                  "// Repeatable missions are the ones with a counter worth watching.",
+                  "(body.data.missions || []).filter(m => m.is_repeatable).forEach(m =>",
+                  "  console.log(m.code, 'x' + m.times_completed, m.xp_earned + ' XP'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Complete a mission (upsert)",
+          "name": "Scan a QR code",
           "request": {
             "method": "POST",
             "header": [
@@ -1427,34 +1439,31 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "Prefer",
-                "value": "resolution=merge-duplicates,return=representation"
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/user_missions?on_conflict=user_id,mission_id",
+              "raw": "{{base_url}}/functions/v1/user/qr/scan",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "user_missions"
-              ],
-              "query": [
-                {
-                  "key": "on_conflict",
-                  "value": "user_id,mission_id"
-                }
+                "user",
+                "qr",
+                "scan"
               ]
             },
+            "description": "Claim a printed code. `code` is the slug from `https://<app>/q/<code>` \u2014 the whole scanned URL is accepted too, and `?code=` works instead of a body.\n\nMint codes to print with `select * from public.mint_qr_codes('zone', 'Zone', 8, 'explore_zone');` then set the `qr_code` collection variable to one of the returned slugs.\n\n**A repeat scan is a 200, not an error** \u2014 `counted: false` with `\"You have already scanned this one.\"`. Branch on `counted`, not the status code. 404 = unknown code, 409 = code switched off.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"mission_id\": {{mission_id}},\n  \"status\": \"completed\",\n  \"points_awarded\": 50,\n  \"completed_at\": \"{{$isoTimestamp}}\"\n}"
-            },
-            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| user_id | uuid | yes | Must equal the signed-in user |\n| mission_id | integer | yes | |\n| status | string | no | `in_progress` (default) or `completed` |\n| points_awarded | integer | no | Defaults to 0 |\n| completed_at | timestamptz | no | |\n\nUnique on (user_id, mission_id), so `Prefer: resolution=merge-duplicates` turns this into an upsert and avoids a 23505 on a second attempt.\n\n`on_conflict=user_id,mission_id` is required with it — without naming the unique constraint PostgREST targets the primary key instead and a repeat completion returns **409**. In supabase-js that is `.upsert(row, { onConflict: 'user_id,mission_id' })`."
+              "raw": "{\n  \"code\": \"{{qr_code}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -1462,7 +1471,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('documented status', () => pm.expect([200, 201]).to.include(pm.response.code));"
+                  "pm.test('documented status', () => pm.expect([200, 400, 404, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('claim result', () => pm.expect(body.data).to.have.property('counted'));",
+                  "  console.log(body.data.counted",
+                  "    ? 'Earned ' + body.data.xp_awarded + ' XP (total ' + body.data.total_xp + ')'",
+                  "    : 'Already scanned \u2014 nothing awarded');",
+                  "} else {",
+                  "  console.log('Set the qr_code variable to a real slug from mint_qr_codes():', body.message);",
+                  "}"
                 ]
               }
             }
@@ -1479,31 +1497,132 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/leaderboard?select=*,users(first_name,last_name,profile_image)&order=rank.asc&limit=50",
+              "raw": "{{base_url}}/functions/v1/user/leaderboard?per_page=15&page=1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "leaderboard"
+              ],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "15"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Rankings by XP \u2014 mission XP plus session check-in XP, admins excluded.\n\n`per_page` defaults to **15** (the top-15 board) and pages like every other list. `me` is the caller's own card for the panel underneath, always present even when they are also in `entries` (`is_me` marks that row).\n\nSomeone who has earned nothing is **unranked** (`rank: null`, `total_xp: 0`) rather than ranked last. `user_id` is what `GET user/profile/{id}` takes, for tapping a name."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('board plus my card', () => {",
+                  "  pm.expect(body.data.entries).to.be.an('array');",
+                  "  pm.expect(body.data.me).to.have.property('total_xp');",
+                  "});",
+                  "pm.test('ranks ascend', () => {",
+                  "  const ranks = body.data.entries.map(e => e.rank);",
+                  "  pm.expect(ranks).to.eql(ranks.slice().sort((a, b) => a - b));",
+                  "});",
+                  "console.log('me: rank', body.data.me.rank, '\u00b7', body.data.me.total_xp, 'XP');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mission catalog (direct REST, read-only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/missions?select=id,code,title,description,points,is_repeatable,max_completions&is_active=eq.true&order=sort_order",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "rest",
                 "v1",
-                "leaderboard"
+                "missions"
               ],
               "query": [
                 {
                   "key": "select",
-                  "value": "*,users(first_name,last_name,profile_image)"
+                  "value": "id,code,title,description,points,is_repeatable,max_completions"
+                },
+                {
+                  "key": "is_active",
+                  "value": "eq.true"
                 },
                 {
                   "key": "order",
-                  "value": "rank.asc"
-                },
-                {
-                  "key": "limit",
-                  "value": "50"
+                  "value": "sort_order"
                 }
               ]
             },
-            "description": "View columns: `user_id`, `total_points`, `rank`. Counts completed missions only, across all attendees."
+            "description": "Read-only. `code` is the stable machine name the triggers and QR codes reference \u2014 prefer it over the id or the title."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My completion ledger (direct REST, read-only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/mission_completions?select=*,missions(code,title)&order=created_at.desc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "mission_completions"
+              ],
+              "query": [
+                {
+                  "key": "select",
+                  "value": "*,missions(code,title)"
+                },
+                {
+                  "key": "order",
+                  "value": "created_at.desc"
+                }
+              ]
+            },
+            "description": "One row per completion that counted, own rows only. `source_key` is the dedup key \u2014 `agenda:<uuid>`, `qr:<id>`, `connection:<uuid>`, `derived:all` \u2014 which is why re-adding a session never counts twice."
           },
           "event": [
             {
@@ -1521,10 +1640,10 @@
     },
     {
       "name": "6. Agenda",
-      "description": "`agenda` is read-only session data. Guilds attach many-to-many through `agenda_guilds` — the old `agenda.guild_id` column was dropped, don't reference it.\n\n`user_agenda` is the per-user bookmark list: insert and delete only, no update.",
+      "description": "Every event carries the caller's own state (`my_status`, `is_saved`, `is_checked_in`) and `is_past`, so a list screen needs one call.\n\nTags are `public.guilds` rows: at most two per event, one primary. `quest_section` is `main` / `side` / `bonus`.\n\n**`user_agenda` is no longer client-writable** \u2014 use `POST user/agenda/schedule`. A direct REST insert or delete returns 42501.",
       "item": [
         {
-          "name": "Full agenda",
+          "name": "Agenda (filtered)",
           "request": {
             "method": "GET",
             "header": [
@@ -1534,27 +1653,40 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/agenda?select=id,name,description,day,start_time,end_time,location,speaker_name,speaker_title,speaker_company,is_sponsored,status,sort_order,event_quest_config:configs!agenda_event_quest_config_id_fkey(name),agenda_guilds(guilds(name))&order=sort_order",
+              "raw": "{{base_url}}/functions/v1/user/agenda?day=all&quest=all&search=&page=1&per_page=20",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
+                "user",
                 "agenda"
               ],
               "query": [
                 {
-                  "key": "select",
-                  "value": "id,name,description,day,start_time,end_time,location,speaker_name,speaker_title,speaker_company,is_sponsored,status,sort_order,event_quest_config:configs!agenda_event_quest_config_id_fkey(name),agenda_guilds(guilds(name))"
+                  "key": "day",
+                  "value": "all"
                 },
                 {
-                  "key": "order",
-                  "value": "sort_order"
+                  "key": "quest",
+                  "value": "all"
+                },
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
                 }
               ]
             },
-            "description": "`agenda` has three separate foreign keys to `configs` (quest, day, stage), so a bare `configs(...)` embed is ambiguous — name the constraint as shown.\n\nStores the first row's id in `agenda_id` for the requests below."
+            "description": "Filters, all optional: `day` (a date `YYYY-MM-DD` **or** a configs.id of type `event-day`), `quest` (`main` / `side` / `bonus` / a configs.id), `guild_id` (tag), `user_type` (Builder / Operator / Explorer), `search` (name, speaker, company, location), `saved=true`, `sponsored=true`. `all` means no filter.\n\nChronological order. Past events are **returned, not hidden** \u2014 grey them out using `is_past`."
           },
           "event": [
             {
@@ -1563,19 +1695,29 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200', () => pm.response.to.have.status(200));",
-                  "const rows = pm.response.json();",
-                  "if (Array.isArray(rows) && rows.length) {",
-                  "  pm.collectionVariables.set('agenda_id', rows[0].id);",
+                  "const body = pm.response.json();",
+                  "pm.test('paged events', () => {",
+                  "  pm.expect(body.data.events).to.be.an('array');",
+                  "  pm.expect(body.data.pagination).to.have.property('total');",
+                  "});",
+                  "// Remember one of each kind, so the save / interest requests below have a target.",
+                  "const events = body.data.events || [];",
+                  "const open = events.find(e => !e.is_invite_only);",
+                  "if (open) {",
+                  "  pm.collectionVariables.set('agenda_id', open.id);",
+                  "  console.log('agenda_id =', open.id, '\u00b7', open.name, '\u00b7', open.quest_section, '\u00b7', open.xp_value, 'XP');",
                   "} else {",
-                  "  console.log('Agenda is empty — the add/remove requests below will fail on the foreign key until sessions exist.');",
-                  "}"
+                  "  console.log('No events yet \u2014 seed public.agenda first.');",
+                  "}",
+                  "const invite = events.find(e => e.is_invite_only);",
+                  "if (invite) pm.collectionVariables.set('invite_agenda_id', invite.id);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Agenda for one day",
+          "name": "Agenda days (which tab to open)",
           "request": {
             "method": "GET",
             "header": [
@@ -1585,31 +1727,25 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/agenda?select=id,name,start_time,end_time,location&event_day_config_id=eq.8&order=sort_order",
+              "raw": "{{base_url}}/functions/v1/user/agenda/days?today=",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "agenda"
+                "user",
+                "agenda",
+                "days"
               ],
               "query": [
                 {
-                  "key": "select",
-                  "value": "id,name,start_time,end_time,location"
-                },
-                {
-                  "key": "event_day_config_id",
-                  "value": "eq.8"
-                },
-                {
-                  "key": "order",
-                  "value": "sort_order"
+                  "key": "today",
+                  "value": ""
                 }
               ]
             },
-            "description": "`event_day_config_id` points at `configs` rows of type `event-day` (ids 8–10 = Day 0/1/2 in the seed data). `day=eq.2026-09-01` filters by calendar date instead."
+            "description": "The day tabs, with `event_count` / `saved_count` per day.\n\nOpen on `current_day`: today if the conference is running, otherwise the next day still to come, otherwise the last one \u2014 so the screen is never blank.\n\n**Pass `today` as the client's own local date.** Left out, the server's UTC date decides, and a US conference would flip over mid-afternoon."
           },
           "event": [
             {
@@ -1617,101 +1753,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Agenda by quest type",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/rest/v1/agenda?select=id,name,start_time&event_quest_config_id=eq.4&order=sort_order",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "rest",
-                "v1",
-                "agenda"
-              ],
-              "query": [
-                {
-                  "key": "select",
-                  "value": "id,name,start_time"
-                },
-                {
-                  "key": "event_quest_config_id",
-                  "value": "eq.4"
-                },
-                {
-                  "key": "order",
-                  "value": "sort_order"
-                }
-              ]
-            },
-            "description": "Quest types are `configs` rows of type `event-quest` — 4 Main Quests, 5 Side Quests, 6 Bonus Quests, 7 My Schedule in the seed data."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Agenda by guild",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/rest/v1/agenda_guilds?select=agenda(id,name,start_time,location)&guild_id=eq.{{guild_id}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "rest",
-                "v1",
-                "agenda_guilds"
-              ],
-              "query": [
-                {
-                  "key": "select",
-                  "value": "agenda(id,name,start_time,location)"
-                },
-                {
-                  "key": "guild_id",
-                  "value": "eq.{{guild_id}}"
-                }
-              ]
-            },
-            "description": "Query the join table and embed the session, since the guild filter lives there."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('days listed', () => pm.expect(body.data.days).to.be.an('array'));",
+                  "console.log('open on', body.data.current_day, '(config', body.data.current_day_config_id + ')');"
                 ]
               }
             }
@@ -1728,27 +1773,33 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/user_agenda?select=id,day,created_at,agenda(id,name,start_time,end_time,location,speaker_name)&order=day",
+              "raw": "{{base_url}}/functions/v1/user/agenda/schedule?status=scheduled&page=1&per_page=20",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "user_agenda"
+                "user",
+                "agenda",
+                "schedule"
               ],
               "query": [
                 {
-                  "key": "select",
-                  "value": "id,day,created_at,agenda(id,name,start_time,end_time,location,speaker_name)"
+                  "key": "status",
+                  "value": "scheduled"
                 },
                 {
-                  "key": "order",
-                  "value": "day"
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
                 }
               ]
             },
-            "description": "RLS limits this to your own bookmarks."
+            "description": "Same `events` shape as the list above, so one renderer serves both.\n\n`status`: `scheduled` (default \u2014 saved + approved), `saved`, `interested` (waiting on an admin for an invite-only event), `approved`, `rejected`, `all`. Takes every filter the main list takes."
           },
           "event": [
             {
@@ -1763,7 +1814,7 @@
           ]
         },
         {
-          "name": "Add session to my schedule",
+          "name": "Add a session to my schedule",
           "request": {
             "method": "POST",
             "header": [
@@ -1774,63 +1825,161 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "Prefer",
-                "value": "resolution=merge-duplicates,return=representation"
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/user_agenda?on_conflict=user_id,agenda_id",
+              "raw": "{{base_url}}/functions/v1/user/agenda/schedule",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "rest",
+                "functions",
                 "v1",
-                "user_agenda"
-              ],
-              "query": [
-                {
-                  "key": "on_conflict",
-                  "value": "user_id,agenda_id"
-                }
+                "user",
+                "agenda",
+                "schedule"
               ]
             },
+            "description": "`action`: `save` | `unsave` | `interest` | `withdraw` (also accepted as `?action=`).\n\nSaving a **Main/Side Quest** earns the \"Add a session\" mission; saving a **Bonus Quest** (offsite) earns \"Book Your First Quest\". `missions` in the response is the progress *after* the write, so the counter can move without a second call.\n\n409 on an invite-only event \u2014 use `interest`. Repeating an action you have already taken answers 200 with the current state.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"agenda_id\": \"{{agenda_id}}\"\n}"
-            },
-            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| user_id | uuid | yes | Must equal the signed-in user |\n| agenda_id | uuid | yes | `agenda.id` |\n| day | date | no | Denormalised copy for grouping |\n\nUnique on (user_id, agenda_id), so `Prefer: resolution=merge-duplicates` plus `on_conflict=user_id,agenda_id` makes a repeat tap idempotent. Without the `on_conflict` target PostgREST aims at the primary key and the second tap returns 409.\n\nA 23503 means `agenda_id` doesn't exist — run **Full agenda** first to populate the variable."
+              "raw": "{\n  \"agenda_id\": \"{{agenda_id}}\",\n  \"action\": \"save\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.variables.get('agenda_id')) {",
-                  "  console.log('agenda_id not set (no sessions in the agenda table) — skipping');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('documented status', () => pm.expect([200, 201]).to.include(pm.response.code));"
+                  "pm.test('documented status', () => pm.expect([200, 400, 404, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('on my schedule', () => pm.expect(body.data.is_saved).to.be.true);",
+                  "  const session = (body.data.missions || []).find(m => m.missions && m.missions.code === 'add_session');",
+                  "  if (session) console.log('add_session x' + session.times_completed);",
+                  "} else {",
+                  "  console.log('Save skipped:', pm.response.code, body.message);",
+                  "}"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Remove session from my schedule",
+          "name": "Remove a session (re-adding will NOT count again)",
           "request": {
-            "method": "DELETE",
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/agenda/schedule",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "agenda",
+                "schedule"
+              ]
+            },
+            "description": "`unsave` (or `withdraw` for an interest request) deletes the row.\n\nThe mission completion is keyed on the event, so removing does **not** decrement the counter and re-adding does **not** increment it \u2014 the FRD's \"removing and re-adding the same session will not count\". Run this then re-run the save above to see the counter hold steady.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agenda_id\": \"{{agenda_id}}\",\n  \"action\": \"unsave\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 404, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) pm.test('off my schedule', () => pm.expect(body.data.my_status).to.be.null);",
+                  "else console.log('Remove skipped:', body.message);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Express interest (invite-only event)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/user/agenda/schedule",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "agenda",
+                "schedule"
+              ]
+            },
+            "description": "For events with `is_invite_only = true`, where the Agenda screen shows this instead of add-to-schedule. Leaves `my_status: \"interested\"` until an admin approves.\n\n409 on an open event \u2014 use `save`. Approving is admin-side and has no route yet: an admin sets `public.user_agenda.status` to `approved`, which awards the mission XP through the same trigger.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agenda_id\": \"{{invite_agenda_id}}\",\n  \"action\": \"interest\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 404, 409]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "console.log(pm.response.code === 200 ? 'interest registered' : 'Skipped: ' + body.message);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "One event",
+          "request": {
+            "method": "GET",
             "header": [
               {
                 "key": "apikey",
@@ -1838,43 +1987,72 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/user_agenda?agenda_id=eq.{{agenda_id}}",
+              "raw": "{{base_url}}/functions/v1/user/agenda/{{agenda_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "user",
+                "agenda",
+                "{{agenda_id}}"
+              ]
+            },
+            "description": "The same object as one element of the list. 404 if the id is unknown, 400 if it is not a UUID (`days` and `schedule` are matched as routes first, so they are never read as ids)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Agenda (direct REST, read-only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/agenda?select=id,name,day,start_time,end_time,location,xp_value,is_sponsored,is_invite_only,status,quest:configs!agenda_event_quest_config_id_fkey(name),agenda_guilds(is_primary,guilds(name))&order=sort_order",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "rest",
                 "v1",
-                "user_agenda"
+                "agenda"
               ],
               "query": [
                 {
-                  "key": "agenda_id",
-                  "value": "eq.{{agenda_id}}"
+                  "key": "select",
+                  "value": "id,name,day,start_time,end_time,location,xp_value,is_sponsored,is_invite_only,status,quest:configs!agenda_event_quest_config_id_fkey(name),agenda_guilds(is_primary,guilds(name))"
+                },
+                {
+                  "key": "order",
+                  "value": "sort_order"
                 }
               ]
             },
-            "description": "Returns 204. Deleting someone else's bookmark silently affects 0 rows."
+            "description": "Still readable directly. `agenda` has three separate FKs to `configs`, so an embedded `configs(...)` is ambiguous \u2014 name the constraint, as below. Tags come through `agenda_guilds(is_primary, guilds(name))`."
           },
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.variables.get('agenda_id')) {",
-                  "  console.log('agenda_id not set (no sessions in the agenda table) — skipping');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('204', () => pm.response.to.have.status(204));"
+                  "pm.test('200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -1884,7 +2062,7 @@
     },
     {
       "name": "7. Chat",
-      "description": "The four chat endpoints. Run them in order the first time: Create stores `chat_id` for Details and Send.\n\n`other_user_id` comes from **People (directory)** in folder 3.\n\nMembership is checked on every route, so a chat you are not in answers 404. New messages arriving while a screen is open come over realtime on `chat_messages` — these endpoints are for loading and sending.",
+      "description": "The four chat endpoints. Run them in order the first time: Create stores `chat_id` for Details and Send.\n\n`other_user_id` comes from **People (directory)** in folder 3.\n\nMembership is checked on every route, so a chat you are not in answers 404. New messages arriving while a screen is open come over realtime on `chat_messages` \u2014 these endpoints are for loading and sending.",
       "item": [
         {
           "name": "Create chat",
@@ -1912,7 +2090,7 @@
                 "create"
               ]
             },
-            "description": "Start a chat with an attendee — this is the \"Message\" button.\n\nFind-or-create: one direct chat per pair, so tapping twice opens the same conversation (`created` tells you which happened, and the message reads \"Chat opened.\"). No connection request is needed first.\n\n`other_user_id` is set by People (directory) in folder 3.",
+            "description": "Start a chat with an attendee \u2014 this is the \"Message\" button.\n\nFind-or-create: one direct chat per pair, so tapping twice opens the same conversation (`created` tells you which happened, and the message reads \"Chat opened.\"). No connection request is needed first.\n\n`other_user_id` is set by People (directory) in folder 3.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": \"{{other_user_id}}\"\n}",
@@ -1982,7 +2160,7 @@
                 }
               ]
             },
-            "description": "Every chat I am in, most recently active first, paged.\n\nEach row carries the other person's card, `last_message` (null for a chat with no messages yet) and `unread_count` — messages from them since I last opened it.\n\n`search` matches the other person by name, nerd number, company or job title."
+            "description": "Every chat I am in, most recently active first, paged.\n\nEach row carries the other person's card, `last_message` (null for a chat with no messages yet) and `unread_count` \u2014 messages from them since I last opened it.\n\n`search` matches the other person by name, nerd number, company or job title."
           },
           "event": [
             {
@@ -2036,7 +2214,7 @@
                 }
               ]
             },
-            "description": "The chat, the other person, and a page of messages **newest first** — page 1 is what the screen opens on, so reverse the array to render oldest-at-top and fetch page 2 for older history.\n\nOpening a chat marks it read; the `unread_count` in the response is the count from before that, so the badge can be cleared from the same payload.\n\n404 if the chat does not exist or you are not a participant."
+            "description": "The chat, the other person, and a page of messages **newest first** \u2014 page 1 is what the screen opens on, so reverse the array to render oldest-at-top and fetch page 2 for older history.\n\nOpening a chat marks it read; the `unread_count` in the response is the count from before that, so the badge can be cleared from the same payload.\n\n404 if the chat does not exist or you are not a participant."
           },
           "event": [
             {
@@ -2122,7 +2300,7 @@
     },
     {
       "name": "8. Notifications",
-      "description": "Rows are written server-side only — the app can list, mark read and delete, never create.\n\n`type` is one of `chat_message`, `mission`, `agenda`, `announcement`; `data` carries the deep-link target, e.g. `{\"chat_id\": \"...\"}`.\n\n**`read_at` is the only column the app may write.** Patching title/body/data returns 42501 by design, so send `{ read_at }` alone rather than the whole object.",
+      "description": "Rows are written server-side only \u2014 the app can list, mark read and delete, never create.\n\n`type` is one of `chat_message`, `mission`, `agenda`, `announcement`; `data` carries the deep-link target, e.g. `{\"chat_id\": \"...\"}`.\n\n**`read_at` is the only column the app may write.** Patching title/body/data returns 42501 by design, so send `{ read_at }` alone rather than the whole object.",
       "item": [
         {
           "name": "List notifications",
@@ -2174,7 +2352,7 @@
                   "pm.test('200', () => pm.response.to.have.status(200));",
                   "const rows = pm.response.json();",
                   "if (Array.isArray(rows) && rows.length) pm.collectionVariables.set('notification_id', rows[0].id);",
-                  "else console.log('No notifications yet — nothing is inserting them until push delivery is built.');"
+                  "else console.log('No notifications yet \u2014 nothing is inserting them until push delivery is built.');"
                 ]
               }
             }
@@ -2269,7 +2447,7 @@
               "mode": "raw",
               "raw": "{\n  \"read_at\": \"{{$isoTimestamp}}\"\n}"
             },
-            "description": "Send `read_at` only. Adding `title`, `body` or `data` to this body returns **42501 permission denied for table notifications** — column-level grants stop a user rewriting a notification they were sent."
+            "description": "Send `read_at` only. Adding `title`, `body` or `data` to this body returns **42501 permission denied for table notifications** \u2014 column-level grants stop a user rewriting a notification they were sent."
           },
           "event": [
             {
@@ -2278,7 +2456,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (!pm.variables.get('notification_id')) {",
-                  "  console.log('notification_id not set — skipping');",
+                  "  console.log('notification_id not set \u2014 skipping');",
                   "  pm.execution.skipRequest();",
                   "}"
                 ]
@@ -2384,7 +2562,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (!pm.variables.get('notification_id')) {",
-                  "  console.log('notification_id not set — skipping');",
+                  "  console.log('notification_id not set \u2014 skipping');",
                   "  pm.execution.skipRequest();",
                   "}"
                 ]
@@ -2405,7 +2583,7 @@
     },
     {
       "name": "9. Admin routes",
-      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth → Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
+      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth \u2192 Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
       "item": [
         {
           "name": "List attendee emails",
@@ -2440,7 +2618,7 @@
                 }
               ]
             },
-            "description": "Paged, searchable view of the invite list.\n\n| Query parameter | Type | Default | Notes |\n| --- | --- | --- | --- |\n| page | integer | 1 | 1-based |\n| per_page | integer | 50 | Capped at 200 |\n| search | string | — | Case-insensitive substring of the email. `%` and `_` match literally, not as wildcards |\n| limit / offset | integer | — | Accepted as aliases, if you prefer that style |\n\n**200**\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"7 emails on the attendee list.\",\n  \"data\": {\n    \"users\": [{ \"id\": \"...\", \"email\": \"ada@example.com\", \"first_name\": \"Ada\", \"last_name\": null }],\n    \"search\": null,\n    \"pagination\": { \"total\": 7, \"page\": 1, \"per_page\": 3, \"total_pages\": 3, \"has_next\": true, \"has_prev\": false }\n  }\n}\n```\n\n`pagination.total` counts what the filter matched, so it drives the pager even with a `search` active. A page past the end is not an error — it returns an empty `users` array with the real totals."
+            "description": "Paged, searchable view of the invite list.\n\n| Query parameter | Type | Default | Notes |\n| --- | --- | --- | --- |\n| page | integer | 1 | 1-based |\n| per_page | integer | 50 | Capped at 200 |\n| search | string | \u2014 | Case-insensitive substring of the email. `%` and `_` match literally, not as wildcards |\n| limit / offset | integer | \u2014 | Accepted as aliases, if you prefer that style |\n\n**200**\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"7 emails on the attendee list.\",\n  \"data\": {\n    \"users\": [{ \"id\": \"...\", \"email\": \"ada@example.com\", \"first_name\": \"Ada\", \"last_name\": null }],\n    \"search\": null,\n    \"pagination\": { \"total\": 7, \"page\": 1, \"per_page\": 3, \"total_pages\": 3, \"has_next\": true, \"has_prev\": false }\n  }\n}\n```\n\n`pagination.total` counts what the filter matched, so it drives the pager even with a `search` active. A page past the end is not an error \u2014 it returns an empty `users` array with the real totals."
           },
           "event": [
             {
@@ -2500,7 +2678,7 @@
               "mode": "raw",
               "raw": "{\n  \"emails\": [\n    \"{{stack_email}}\",\n    { \"email\": \"{{stack_email_2}}\", \"first_name\": \"Sam\", \"last_name\": \"Ray\" }\n  ]\n}"
             },
-            "description": "| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | one of the two | A single address |\n| emails | array | one of the two | Up to 200. Items may be strings or `{ email, first_name?, last_name? }` |\n| first_name | string | no | Only with the single-`email` form |\n| last_name | string | no | Only with the single-`email` form |\n\nAddresses are trimmed and lower-cased; matching ignores case, so `NINA@Example.com` and `nina@example.com` are the same entry.\n\n- **200** `data: { requested, added_count, added[], already_on_list[] }`\n- **400** one invalid address rejects the whole request and nothing is written\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false\n- **404** unknown route — the message lists the valid ones\n- **405** wrong method for the route"
+            "description": "| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| email | string | one of the two | A single address |\n| emails | array | one of the two | Up to 200. Items may be strings or `{ email, first_name?, last_name? }` |\n| first_name | string | no | Only with the single-`email` form |\n| last_name | string | no | Only with the single-`email` form |\n\nAddresses are trimmed and lower-cased; matching ignores case, so `NINA@Example.com` and `nina@example.com` are the same entry.\n\n- **200** `data: { requested, added_count, added[], already_on_list[] }`\n- **400** one invalid address rejects the whole request and nothing is written\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false\n- **404** unknown route \u2014 the message lists the valid ones\n- **405** wrong method for the route"
           },
           "event": [
             {
@@ -2554,7 +2732,7 @@
               "mode": "raw",
               "raw": "{\n  \"emails\": [\n    \"{{stack_email}}\",\n    \"{{stack_email_2}}\"\n  ]\n}"
             },
-            "description": "Same body shape as add.\n\n- **200** `data: { requested, removed_count, removed[], not_found[] }`\n- **401** / **403** / **400** as for the add request\n\n**Removing an address does not delete an account that already registered with it** — it only stops future registrations.\n\nIn supabase-js the method has to be spelled out: `supabase.functions.invoke('admin/user/remove', { method: 'DELETE', body: { email } })`."
+            "description": "Same body shape as add.\n\n- **200** `data: { requested, removed_count, removed[], not_found[] }`\n- **401** / **403** / **400** as for the add request\n\n**Removing an address does not delete an account that already registered with it** \u2014 it only stops future registrations.\n\nIn supabase-js the method has to be spelled out: `supabase.functions.invoke('admin/user/remove', { method: 'DELETE', body: { email } })`."
           },
           "event": [
             {
@@ -2600,7 +2778,7 @@
                 "get"
               ]
             },
-            "description": "Reads the current announcement in the admin envelope, for the editor screen. No parameters.\n\n**200**\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"Announcement loaded.\",\n  \"data\": { \"text\": \"Keynote moved to 10am.\", \"updated_by\": \"88fd8fc0-...\", \"updated_at\": \"...\" }\n}\n```\n\nWith no announcement set it still succeeds, with `text: \"\"` and the message `There is no announcement right now.`\n\nUsers read the same announcement over REST — see the **10. Announcement** folder."
+            "description": "Reads the current announcement in the admin envelope, for the editor screen. No parameters.\n\n**200**\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"Announcement loaded.\",\n  \"data\": { \"text\": \"Keynote moved to 10am.\", \"updated_by\": \"88fd8fc0-...\", \"updated_at\": \"...\" }\n}\n```\n\nWith no announcement set it still succeeds, with `text: \"\"` and the message `There is no announcement right now.`\n\nUsers read the same announcement over REST \u2014 see the **10. Announcement** folder."
           },
           "event": [
             {
@@ -2653,9 +2831,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"text\": \"{{announcement}}\"\n}"
+              "raw": "{\n  \"text\": \"Keynote moved to 10am.\",\n  \"map_image\": null\n}"
             },
-            "description": "Saves the announcement, replacing whatever was there.\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| text | string | yes | Up to 2000 characters. **May be empty** — an empty string clears the banner. `null` clears it too, and the value is trimmed, so whitespace-only input also clears it |\n\n**200** `data: { text, updated_by, updated_at }`, with the message `Announcement saved.` or `Announcement cleared.` when the result is empty.\n\nOmitting `text` is a **400** (`\"text\" is required. Send an empty string to clear the announcement.`) so a client bug can't blank the banner by accident. A non-string `text` is a 400, and over 2000 characters is a 400.\n\nSet the `announcement` variable to control what gets saved; empty it to test clearing."
+            "description": "Saves the announcement banner and/or the Home floor plan.\n\n- `text` \u2014 up to 2000 characters. **May be empty**: an empty string (or `null`, or whitespace only) clears the banner, which is how an admin turns it off.\n- `map_image` \u2014 public `http(s)` URL of the floor plan shown on Home. `null` or `\"\"` removes the map. Upload the image to a storage bucket first; this stores the URL, not the bytes.\n\nBoth are optional so they can be edited independently, but sending **neither** is a 400 \u2014 a client bug cannot blank the banner by accident, while clearing it stays an explicit action.\n\nUsers read both fields from `GET user/home`, or over REST from `announcements`."
           },
           "event": [
             {
@@ -2682,7 +2860,7 @@
     },
     {
       "name": "10. Announcement",
-      "description": "The event-wide banner, as users read it: a single row in public.announcements, readable by any signed-in user. Admins edit it through **9. Admin routes**.\n\nEmpty `text` means there is no announcement — hide the banner rather than rendering an empty bar.",
+      "description": "The event-wide banner, as users read it: a single row in public.announcements, readable by any signed-in user. Admins edit it through **9. Admin routes**.\n\nEmpty `text` means there is no announcement \u2014 hide the banner rather than rendering an empty bar.",
       "item": [
         {
           "name": "Get announcement",
@@ -2695,7 +2873,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/rest/v1/announcements?select=text,updated_at",
+              "raw": "{{base_url}}/rest/v1/announcements?select=text,map_image,updated_at",
               "host": [
                 "{{base_url}}"
               ],
@@ -2707,11 +2885,11 @@
               "query": [
                 {
                   "key": "select",
-                  "value": "text,updated_at"
+                  "value": "text,map_image,updated_at"
                 }
               ]
             },
-            "description": "Returns an array with the single announcement row:\n\n```json\n[{ \"text\": \"Keynote moved to 10am.\", \"updated_at\": \"2026-08-19T11:00:29.927669+00:00\" }]\n```\n\nIn supabase-js, `.select('text, updated_at').single()` gives you the object directly.\n\nNeeds a session — the select policy is `to authenticated`, so without one this is a 401. Writes are rejected on this path for everyone, admins included."
+            "description": "Returns an array with the single announcement row:\n\n```json\n[{ \"text\": \"Keynote moved to 10am.\", \"updated_at\": \"2026-08-19T11:00:29.927669+00:00\" }]\n```\n\nIn supabase-js, `.select('text, updated_at').single()` gives you the object directly.\n\nNeeds a session \u2014 the select policy is `to authenticated`, so without one this is a 401. Writes are rejected on this path for everyone, admins included."
           },
           "event": [
             {
@@ -2726,7 +2904,7 @@
                   "  pm.expect(rows[0].text).to.be.a('string');",
                   "});",
                   "const text = pm.response.json()[0].text;",
-                  "console.log(text ? `Banner: ${text}` : 'No announcement set — the client should hide the banner.');"
+                  "console.log(text ? `Banner: ${text}` : 'No announcement set \u2014 the client should hide the banner.');"
                 ]
               }
             }
@@ -2736,7 +2914,7 @@
     },
     {
       "name": "Z. Not used by the app (direct REST)",
-      "description": "Kept for debugging and for anyone poking at the tables directly. The app should call the edge functions instead:\n\n- guilds / configs → **2. Config** (`GET config`)\n- chat create / participants / messages → **7. Chat** (`chat/create`, `chat/list`, `chat/details/{id}`, `chat/send/{id}`)\n\nThese still work — the RLS policies allow them — but the function routes do the multi-step writes in one transaction and return the shapes the screens need. See postman/API.md §8.6.",
+      "description": "Kept for debugging and for anyone poking at the tables directly. The app should call the edge functions instead:\n\n- guilds / configs \u2192 **2. Config** (`GET config`)\n- chat create / participants / messages \u2192 **7. Chat** (`chat/create`, `chat/list`, `chat/details/{id}`, `chat/send/{id}`)\n\nThese still work \u2014 the RLS policies allow them \u2014 but the function routes do the multi-step writes in one transaction and return the shapes the screens need. See postman/API.md \u00a78.6.",
       "item": [
         {
           "name": "Guilds",
@@ -2818,7 +2996,7 @@
                 }
               ]
             },
-            "description": "One table backs several lookups — always filter by `type`: `user_type`, `event-quest`, `event-day`, `stage-type` (also `maintenance`, `sponsor`)."
+            "description": "One table backs several lookups \u2014 always filter by `type`: `user_type`, `event-quest`, `event-day`, `stage-type` (also `maintenance`, `sponsor`)."
           },
           "event": [
             {
@@ -2888,7 +3066,7 @@
               "mode": "raw",
               "raw": "{\n  \"id\": \"{{chat_id}}\",\n  \"is_group\": false\n}"
             },
-            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| id | uuid | yes here | Generate client-side (`crypto.randomUUID()`) so you know it without reading the row back |\n| is_group | boolean | no | Defaults to false |\n\n`Prefer: return=minimal` is required — asking for the row returns 42501 because the select policy needs you to be a participant, which isn't true yet. In supabase-js: `.insert({...})` with no `.select()`."
+            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| id | uuid | yes here | Generate client-side (`crypto.randomUUID()`) so you know it without reading the row back |\n| is_group | boolean | no | Defaults to false |\n\n`Prefer: return=minimal` is required \u2014 asking for the row returns 42501 because the select policy needs you to be a participant, which isn't true yet. In supabase-js: `.insert({...})` with no `.select()`."
           }
         },
         {
@@ -2924,7 +3102,7 @@
               "mode": "raw",
               "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"user_id\": \"{{user_id}}\"\n}"
             },
-            "description": "Also `return=minimal` — same reason. The policy allows the row when `user_id` is you, or when you are already in the chat."
+            "description": "Also `return=minimal` \u2014 same reason. The policy allows the row when `user_id` is you, or when you are already in the chat."
           },
           "event": [
             {
@@ -2980,7 +3158,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (!pm.variables.get('other_user_id')) {",
-                  "  console.log('other_user_id not set — skipping');",
+                  "  console.log('other_user_id not set \u2014 skipping');",
                   "  pm.execution.skipRequest();",
                   "}"
                 ]
@@ -3079,7 +3257,7 @@
               "mode": "raw",
               "raw": "{\n  \"chat_id\": \"{{chat_id}}\",\n  \"sender_id\": \"{{user_id}}\",\n  \"body\": \"Hello from Postman\"\n}"
             },
-            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| chat_id | uuid | yes | You must be a participant |\n| sender_id | uuid | yes | Must equal the signed-in user |\n| body | text | yes | |\n\n`return=representation` is fine here — by now you are a participant, so the row is readable."
+            "description": "| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| chat_id | uuid | yes | You must be a participant |\n| sender_id | uuid | yes | Must equal the signed-in user |\n| body | text | yes | |\n\n`return=representation` is fine here \u2014 by now you are a participant, so the row is readable."
           },
           "event": [
             {

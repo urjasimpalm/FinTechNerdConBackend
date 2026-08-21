@@ -10,10 +10,15 @@ then run **1. Auth → Login** — it stores the token for every other request.
 
 The backend has two kinds of endpoint:
 
-- **Edge functions** (`/functions/v1/...`) — custom logic: auth (register, login, password reset), `config`, the `user/*` routes (profile, directory, connections, guilds), `chat/*` and the admin routes.
+- **Edge functions** (`/functions/v1/...`) — custom logic: auth (register, login, password reset), `config`, the `user/*` routes (home, profile, directory, connections, guilds, agenda, missions, QR codes, leaderboard), `chat/*` and the admin routes.
 - **Auto-generated REST** (`/rest/v1/...`) — direct table access, guarded by
-  row-level security so a signed-in user can only ever reach their own data.
-  Everything after login (profile, agenda, chat, missions, notifications) uses this.
+  row-level security so a signed-in user can only ever reach their own data. Used
+  for reading reference data and your own rows (notifications, the announcement,
+  the mission catalog).
+
+Anything that awards XP — saving a session, scanning a QR code — goes through an
+edge function and is **not** writable over REST. See
+[§6.5](#65-how-xp-is-earned).
 
 ---
 
@@ -354,7 +359,7 @@ Common codes: `23503` foreign key, `23505` duplicate, `42501` RLS/permission den
 1. **Writes to rows you don't own return `200 []`, not an error.** RLS filters the
    rows out, so the statement matches nothing. Treat an empty array from a
    PATCH/DELETE as "not yours / not found".
-2. **A few inserts must not ask for the row back** — see [§7 Chat](#7-chat).
+2. **A few inserts must not ask for the row back** — see [§8 Chat](#8-chat).
    Asking for the inserted row (`.select()`) fails with `42501` when the row is
    only visible *after* a second row exists.
 
@@ -892,90 +897,448 @@ filter server-side:
 
 ---
 
-## 6. Missions and leaderboard
+## 6. Home, missions, QR codes and the leaderboard
 
-`missions` (catalog, read-only): `id`, `title`, `description`, `points`, `is_active`.
-`user_missions` (own rows only): `id`, `user_id`, `mission_id`, `status`,
-`points_awarded`, `completed_at`, `created_at`, `updated_at`.
+> **New in this release.** Unlike the rest of this document, the examples in §6
+> and §7 come from the implementation rather than from a run against the local
+> stack — the shapes are what the code returns, but they have not been captured
+> from a live response yet.
+
+All four routes live on the `user` function, need a user token, and answer in the
+`{ status, message, data }` envelope.
+
+### 6.1 `GET user/home` — the Home screen
+
+Everything the home screen needs in one call: the announcement banner, the floor
+plan, and the quick-start card.
+
+```ts
+const { data } = await supabase.functions.invoke("user/home", { method: "GET" });
+```
+
+```json
+{
+  "status": "Success",
+  "message": "Home loaded.",
+  "data": {
+    "announcement": { "text": "Doors open at 9.", "updated_at": "2026-08-21T18:04:11.02Z" },
+    "map_image": "https://<project>.supabase.co/storage/v1/object/public/…/floorplan.png",
+    "quick_start": {
+      "step": "save_sessions",
+      "title": "Save 3 sessions",
+      "destination": "agenda",
+      "progress": 1,
+      "target": 3
+    },
+    "stats": {
+      "saved_sessions": 1,
+      "connections": 0,
+      "missions_completed": 1,
+      "total_xp": 50,
+      "rank": 12
+    }
+  }
+}
+```
+
+`quick_start` is the one-item-at-a-time card, already resolved:
+
+| `step` | Shown when | `destination` |
+| --- | --- | --- |
+| `save_sessions` | Fewer than 3 events on the schedule | `agenda` |
+| `first_connection` | 3 saved, but no accepted connections | `community` |
+| `null` | Both done — **hide the card** | — |
+
+An empty `announcement.text` means there is no banner to show, and a null
+`map_image` means there is no map — neither is an error. Admins set both through
+[§11.5](#115-post-adminannouncementpost).
+
+### 6.2 `GET user/mission/list` — the Missions screen
+
+The catalog with the caller's progress folded in.
+
+| Parameter | Meaning |
+| --- | --- |
+| `include_inactive` | `true` to include missions with `is_active = false`. Off by default |
+
+```json
+{
+  "status": "Success",
+  "message": "2 of 7 missions completed.",
+  "data": {
+    "missions": [
+      {
+        "id": 2,
+        "code": "add_session",
+        "title": "Add a session to your schedule",
+        "description": "Check in to a Main Quest or Side Quest Stage session…",
+        "xp": 50,
+        "points": 50,
+        "is_active": true,
+        "is_repeatable": true,
+        "max_completions": null,
+        "how_to_earn": "Add a Main Quest or Side Quest session to your schedule.",
+        "is_completed": true,
+        "times_completed": 3,
+        "xp_earned": 150,
+        "completed_at": "2026-08-21T18:12:03.44Z",
+        "remaining": null
+      }
+    ],
+    "summary": {
+      "total": 7,
+      "completed": 2,
+      "mission_xp": 200,
+      "total_xp": 250,
+      "rank": 4
+    }
+  }
+}
+```
+
+- `is_completed` is the completion indicator; `times_completed` is the sheet's
+  "Times Completed" counter and is only interesting when `is_repeatable`.
+- `remaining` is `null` when there is no cap.
+- `xp` and `points` are the same number. The column is `points`, the UI says XP.
+- `summary.mission_xp` counts missions only; `summary.total_xp` also counts
+  session check-ins, so the two are not expected to match.
+
+**There is no route that completes a mission.** See [§6.5](#65-how-xp-is-earned).
+
+### 6.3 `POST user/qr/scan` — claim a scanned QR code
+
+The printed codes resolve to `https://<app>/q/<code>`. Read the slug off the URL
+and post it here.
+
+```ts
+await supabase.functions.invoke("user/qr/scan", { body: { code: "9f2c1ab47e0d5c31" } });
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `code` | yes | The slug, or the whole scanned URL — both work. May also be sent as `?code=` |
+
+```json
+{
+  "status": "Success",
+  "message": "Explore a New Zone — 3 times now. +50 XP.",
+  "data": {
+    "label": "Zone 3",
+    "kind": "zone",
+    "first_scan": true,
+    "counted": true,
+    "mission": {
+      "id": 5,
+      "code": "explore_zone",
+      "title": "Explore a New Zone",
+      "is_repeatable": true,
+      "counted": true,
+      "times_completed": 3
+    },
+    "session": null,
+    "xp_awarded": 50,
+    "total_xp": 300
+  }
+}
+```
+
+A code can award a mission, check you in to a session (`session` is non-null and
+carries the event's XP value), or both.
+
+| Case | Status | Response |
+| --- | --- | --- |
+| Earned something | 200 | `counted: true` — celebrate |
+| Already scanned this code | 200 | `counted: false`, `"You have already scanned this one."` |
+| Unknown code | 404 | `"That QR code is not one of ours."` |
+| Code switched off | 409 | `"… is no longer active. Ask at the help desk."` |
+
+A repeat scan is **not** an error — the attendee did nothing wrong, and the screen
+still wants to show what the code was. Branch on `counted`, not on the status code.
+
+`public.qr_codes` is deliberately **not readable** by attendees: the slug is the
+whole proof that you stood in front of the poster, so a client that could list the
+table could claim every mission from the hotel bar.
+
+### 6.4 `GET user/leaderboard` — the Leaderboard screen
+
+| Parameter | Meaning |
+| --- | --- |
+| `limit` / `per_page` | Defaults to **15**, the sheet's "top 15" |
+| `page` / `offset` | See [§3.1](#31-pagination) — the board scrolls past the top 15 |
+
+```json
+{
+  "status": "Success",
+  "message": "128 ranked attendees.",
+  "data": {
+    "entries": [
+      {
+        "user_id": "8b1f…",
+        "rank": 1,
+        "total_xp": 450,
+        "first_name": "Wasim",
+        "last_name": "Raza",
+        "nerd_number": "00427",
+        "company_name": "Simpalm",
+        "job_title": "Engineer",
+        "profile_image": null,
+        "user_type_config_id": 1,
+        "is_me": false
+      }
+    ],
+    "me": { "user_id": "…", "rank": 12, "total_xp": 150, "…": "same shape" },
+    "pagination": { "total": 128, "page": 1, "per_page": 15, "total_pages": 9, "has_next": true, "has_prev": false }
+  }
+}
+```
+
+- `me` is the caller's own card for the panel under the list, always present —
+  even when they are also in `entries` (`is_me` marks that row).
+- Someone who has earned nothing has `rank: null` and `total_xp: 0`: they are
+  *unranked* rather than ranked last. `GET user/profile` reports the same numbers.
+- `user_id` is what `GET user/profile/{id}` takes, for "click a name to view their
+  profile".
+- Admin accounts are excluded, as everywhere else in the attendee-facing API.
+
+### 6.5 How XP is earned
+
+Every award happens server-side. There is **no endpoint that grants XP on
+request** — the two triggers and the QR claim function below are the only paths,
+so a client cannot promote itself.
+
+| Mission (`code`) | Earned by | Counts once per | Repeatable |
+| --- | --- | --- | --- |
+| `book_first_quest` | Saving a **Bonus Quest** (offsite) event | event | no |
+| `add_session` | Saving a **Main/Side Quest** event | event | yes |
+| `visit_activation` | Scanning a sponsor-booth QR | QR code | yes |
+| `connect_nerd` | A connection being accepted (**both** people earn it) | person | yes |
+| `explore_zone` | Scanning a zone QR | QR code | yes |
+| `nerd_flex` | Scanning the lanyard QR | — | no |
+| `quest_master` | Every other mission completed — awarded automatically | — | no |
+
+Two consequences worth building against:
+
+- **Removing and re-adding a session does not count twice.** The completion is
+  keyed on the event, so the counter does not move on a re-add — and it does not
+  go *down* when you remove it either.
+- **Session XP is separate from mission XP.** Saving an event earns the mission;
+  *attending* it (scanning its QR) banks the event's own `xp_value`. The
+  leaderboard total is the sum of both.
+
+### 6.6 Direct table access
+
+Read-only. `missions` (catalog: `id`, `code`, `title`, `description`, `points`,
+`is_repeatable`, `max_completions`, `sort_order`, `is_active`), `user_missions`
+(own rows: `+ times_completed`), `mission_completions` (own rows — the ledger),
+`qr_scans` and `agenda_checkins` (own rows), and `leaderboard` /
+`leaderboard_people` (everyone).
 
 | Action | Call |
 | --- | --- |
-| Mission catalog | `GET /rest/v1/missions?select=*&is_active=eq.true&order=id` |
-| My progress | `GET /rest/v1/user_missions?select=*,missions(title,points)` |
-| Complete a mission | `POST /rest/v1/user_missions?on_conflict=user_id,mission_id` with `Prefer: resolution=merge-duplicates` |
-| Leaderboard | `GET /rest/v1/leaderboard?select=*,users(first_name,last_name)&order=rank.asc&limit=50` |
+| Mission catalog | `GET /rest/v1/missions?select=*&is_active=eq.true&order=sort_order` |
+| My progress | `GET /rest/v1/user_missions?select=*,missions(code,title,points)` |
+| My completion history | `GET /rest/v1/mission_completions?select=*&order=created_at.desc` |
+| Leaderboard | `GET /rest/v1/leaderboard_people?select=*&order=rank.asc&limit=15` |
 
-`user_missions` insert parameters:
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `user_id` | uuid | yes | Must equal the signed-in user |
-| `mission_id` | integer | yes | |
-| `status` | string | no | `in_progress` (default) or `completed` |
-| `points_awarded` | integer | no | Defaults to 0 |
-| `completed_at` | timestamptz | no | |
-
-One row per `(user_id, mission_id)`, so use upsert to avoid a `23505`. Naming the
-conflict target matters: without `onConflict` (raw REST: `?on_conflict=...`)
-PostgREST aims at the primary key instead and a repeat completion returns `409`.
-
-```ts
-await supabase.from("user_missions").upsert({
-  user_id: user.id,
-  mission_id: 1,
-  status: "completed",
-  points_awarded: 50,
-  completed_at: new Date().toISOString(),
-}, { onConflict: "user_id,mission_id" }).select();
-```
-
-`leaderboard` is a view of completed missions: `user_id`, `total_points`, `rank`.
-The caller's own row is also returned by `GET user/profile` as `total_xp` / `rank`,
-so a profile screen does not need this call.
-It shows every attendee (not just you), and `users(...)` can be embedded for names.
-`points_awarded` is set by the client, so it is only as trustworthy as the app.
+> **Breaking change.** `user_missions` was previously client-writable and API.md
+> told you to upsert your own completions. Those grants are revoked — a write now
+> returns `42501`. Nothing replaces it: completions are awarded by the paths in
+> [§6.5](#65-how-xp-is-earned).
 
 ---
 
 ## 7. Agenda
 
-`agenda` (read-only): `id`, `name`, `description`, `day`, `start_time`,
-`end_time`, `speaker_name`, `speaker_title`, `speaker_company`, `location`,
-`event_quest_config_id`, `event_day_config_id`, `stage_config_id`,
-`is_sponsored`, `sort_order`, `status`, `created_at`.
+Five routes on the `user` function. Every event carries the caller's own state, so
+a list screen can draw the `+` / checkmark button and grey out past events without
+a second call.
 
-Guilds are many-to-many through `agenda_guilds (agenda_id, guild_id)` — the old
-`agenda.guild_id` column was dropped, don't reference it.
+### 7.1 `GET user/agenda` — the event list
 
-`user_agenda` (own rows, insert/delete only — no update): `id`, `user_id`,
-`agenda_id`, `day`, `created_at`, unique on `(user_id, agenda_id)`.
+| Parameter | Example | Meaning |
+| --- | --- | --- |
+| `day` | `2026-09-01`, `9`, `all` | A date **or** a `configs.id` of type `event-day` |
+| `quest` | `main`, `side`, `bonus`, `4`, `all` | The Agenda screen's three sections |
+| `guild_id` | `3` | Filter by tag (guilds are the event tags — see below) |
+| `user_type` | `1` | Builder / Operator / Explorer, a `configs.id` of type `user_type` |
+| `search` | `stablecoin` | Matches name, speaker name, speaker company or location |
+| `saved` | `true` | Only what is on my schedule |
+| `sponsored` | `true` | Only sponsored events |
+| `page`, `per_page` | | See [§3.1](#31-pagination) |
 
-| Action | Call |
-| --- | --- |
-| Full agenda | `GET /rest/v1/agenda?select=*&order=sort_order` |
-| Filter by day | `...&event_day_config_id=eq.8` or `day=eq.2026-09-01` |
-| Filter by quest type | `...&event_quest_config_id=eq.4` |
-| Filter by guild | `GET /rest/v1/agenda_guilds?select=agenda(*)&guild_id=eq.1` |
-| My schedule | `GET /rest/v1/user_agenda?select=id,day,agenda(*)` |
-| Add to my schedule | `POST /rest/v1/user_agenda?on_conflict=user_id,agenda_id` |
-| Remove | `DELETE /rest/v1/user_agenda?agenda_id=eq.<agenda-id>` |
+Events come back in chronological order (`day`, then `start_time`, then
+`sort_order`).
 
-```ts
-// agenda with the quest-type name and guild names resolved
-await supabase.from("agenda").select(`
-  id, name, start_time, end_time, location, speaker_name, status,
-  event_quest_config:configs!agenda_event_quest_config_id_fkey(name),
-  agenda_guilds(guilds(name))
-`).order("sort_order");
-
-// bookmark a session (unique per user+session, so upsert is safest)
-await supabase.from("user_agenda")
-  .upsert({ user_id: user.id, agenda_id, day }, { onConflict: "user_id,agenda_id" })
-  .select();
+```json
+{
+  "status": "Success",
+  "message": "42 events.",
+  "data": {
+    "events": [
+      {
+        "id": "3f9a…",
+        "name": "Stablecoins in 2027",
+        "description": "…",
+        "day": "2026-09-01",
+        "start_time": "2026-09-01T15:00:00Z",
+        "end_time": "2026-09-01T15:45:00Z",
+        "speaker_name": "Joy Adams",
+        "speaker_title": "VP Payments",
+        "speaker_company": "Acme",
+        "location": "Main Hall",
+        "xp_value": 25,
+        "is_sponsored": false,
+        "is_invite_only": false,
+        "capacity": null,
+        "sort_order": 3,
+        "status": "scheduled",
+        "quest": { "id": 4, "name": "Main Quests" },
+        "quest_section": "main",
+        "event_day": { "id": 8, "name": "Day 1" },
+        "stage": { "id": 11, "name": "Stage 1" },
+        "tags": [
+          { "id": 4, "name": "Digital Currency & Stablecoins", "is_primary": true },
+          { "id": 3, "name": "Payments", "is_primary": false }
+        ],
+        "primary_tag": { "id": 4, "name": "Digital Currency & Stablecoins", "is_primary": true },
+        "secondary_tags": [{ "id": 3, "name": "Payments", "is_primary": false }],
+        "user_types": [{ "id": 1, "name": "Builder" }],
+        "is_past": false,
+        "my_status": "saved",
+        "is_saved": true,
+        "is_checked_in": false
+      }
+    ],
+    "search": null,
+    "pagination": { "…": "as everywhere else" }
+  }
+}
 ```
 
-`agenda` has three separate FKs to `configs`, so an embedded `configs(...)` is
-ambiguous — name the constraint as shown above.
+- **`quest_section`** is `main` | `side` | `bonus` | `null` — the three sections of
+  the screen. Bonus Quests are the offsite events.
+- **Tags** are `public.guilds` rows: at most two per event, one `is_primary`.
+  `primary_tag` and `secondary_tags` are the same list, pre-split.
+- **`is_past`** is computed from `end_time` (falling back to `start_time`, then to
+  the day being over). Past events are returned, not hidden — grey them out.
+- **`my_status`** is `null` | `saved` | `interested` | `approved` | `rejected`.
+  `is_saved` is the shorthand for the button: true for `saved` and `approved`.
+- **`is_checked_in`** means they scanned this session's QR code.
+
+### 7.2 `GET user/agenda/days` — the day tabs
+
+Answers the sheet's "jump to the current day of the conference when the agenda is
+loaded" rule.
+
+| Parameter | Meaning |
+| --- | --- |
+| `today` | `YYYY-MM-DD`. Pass the **client's** local date — otherwise the server's UTC date decides, and a US conference would flip over mid-afternoon |
+
+```json
+{
+  "status": "Success",
+  "message": "3 days.",
+  "data": {
+    "today": "2026-09-01",
+    "days": [
+      { "day": "2026-08-31", "event_day_config_id": 8, "name": "Day 0", "event_count": 4, "saved_count": 1, "is_today": false, "is_past": true },
+      { "day": "2026-09-01", "event_day_config_id": 9, "name": "Day 1", "event_count": 22, "saved_count": 3, "is_today": true, "is_past": false }
+    ],
+    "current_day": "2026-09-01",
+    "current_day_config_id": 9
+  }
+}
+```
+
+Open on `current_day`: today if the conference is running, otherwise the next day
+still to come, otherwise the last one — so the screen is never blank before the
+event starts or after it ends.
+
+### 7.3 `GET user/agenda/schedule` — My Schedule
+
+Takes every filter from [§7.1](#71-get-useragenda--the-event-list), plus:
+
+| Parameter | Meaning |
+| --- | --- |
+| `status` | `scheduled` (default — `saved` + `approved`), `saved`, `interested`, `approved`, `rejected`, `all` |
+
+Same `events` shape as §7.1, so one renderer serves both. `?status=interested` is
+the "waiting on an admin" list for invite-only events.
+
+### 7.4 `POST user/agenda/schedule` — add, remove, or ask
+
+```ts
+await supabase.functions.invoke("user/agenda/schedule", {
+  body: { agenda_id: "3f9a…", action: "save" },
+});
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `agenda_id` | yes | |
+| `action` | yes | `save`, `unsave`, `interest`, `withdraw`. May also be sent as `?action=` |
+
+| Action | For | Result |
+| --- | --- | --- |
+| `save` | Open events | `my_status: "saved"`. **409** on an invite-only event — use `interest` |
+| `interest` | Invite-only events | `my_status: "interested"`, awaiting an admin. **409** on an open event |
+| `unsave` / `withdraw` | Either | The row is removed; `my_status: null` |
+
+```json
+{
+  "status": "Success",
+  "message": "Stablecoins in 2027 was added to your schedule.",
+  "data": {
+    "agenda_id": "3f9a…",
+    "my_status": "saved",
+    "is_saved": true,
+    "missions": [
+      { "mission_id": 2, "times_completed": 3, "points_awarded": 150, "missions": { "code": "add_session", "title": "Add a session to your schedule" } }
+    ]
+  }
+}
+```
+
+`missions` is the caller's progress **after** the write, so the "Add a session
+3/…" counter can move without a second call.
+
+Repeating an action you have already taken answers 200 with the current state
+rather than erroring — and an `approved` row is never quietly downgraded to
+`saved`.
+
+### 7.5 `GET user/agenda/{id}` — one event
+
+The same object as one element of `events` in §7.1. `404` if the id is unknown.
+
+### 7.6 Direct table access
+
+`agenda` is still readable directly: `id`, `name`, `description`, `day`,
+`start_time`, `end_time`, `speaker_name`, `speaker_title`, `speaker_company`,
+`location`, `xp_value`, `is_sponsored`, `is_invite_only`, `capacity`,
+`event_quest_config_id`, `event_day_config_id`, `stage_config_id`, `sort_order`,
+`status`, `created_at`.
+
+Tags are `agenda_guilds (agenda_id, guild_id, is_primary)` and audiences are
+`agenda_user_types (agenda_id, user_type_config_id)`. `agenda` has three separate
+FKs to `configs`, so an embedded `configs(...)` is ambiguous — name the
+constraint:
+
+```ts
+await supabase.from("agenda").select(`
+  id, name, start_time, xp_value, location, status,
+  quest:configs!agenda_event_quest_config_id_fkey(name),
+  agenda_guilds(is_primary, guilds(name))
+`).order("sort_order");
+```
+
+> **Breaking change.** `user_agenda` is no longer client-writable — the insert and
+> delete policies and grants are revoked, so the upsert this section used to
+> document returns `42501`. Use `POST user/agenda/schedule`
+> ([§7.4](#74-post-useragendaschedule--add-remove-or-ask)) instead. Reading your
+> own rows still works, and the row now carries `status`.
+>
+> The reason is the invite-only flow: a client that can write its own row can
+> write `status: "approved"` and let itself into a restricted event.
 
 ---
 
@@ -1189,11 +1552,16 @@ manage it through [§11.4](#114-get-adminannouncementget) and
 
 | Action | Call |
 | --- | --- |
-| Read the announcement | `GET /rest/v1/announcements?select=text,updated_at` |
+| Read the announcement | `GET /rest/v1/announcements?select=text,map_image,updated_at` |
 
-`announcements` holds a single row pinned to `id = 1`: `text`, `updated_by`,
-`updated_at`. Signed-in users can read it and nothing more — a write on this path
-is rejected even for an admin (those go through the admin function).
+`announcements` holds a single row pinned to `id = 1`: `text`, `map_image`,
+`updated_by`, `updated_at`. Signed-in users can read it and nothing more — a write
+on this path is rejected even for an admin (those go through the admin function).
+
+`map_image` is the Home screen's floor plan (a public URL, or `null` for "no map").
+The Home screen gets both fields from
+[`GET user/home`](#61-get-userhome--the-home-screen) already, so it needs no extra
+call.
 
 ```json
 [{ "text": "Keynote moved to 10am.", "updated_at": "2026-08-19T11:00:29.927669+00:00" }]
@@ -1352,26 +1720,31 @@ Users read the same announcement over REST instead — see [§10](#10-announceme
 
 ### 11.5 `POST admin/announcement/post`
 
-Saves the announcement, replacing whatever was there.
+Saves the announcement banner and/or the Home floor plan, replacing whatever was
+there.
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `text` | string | yes | Up to 2000 characters. **May be empty** — an empty string clears the banner. `null` clears it too, and the value is trimmed, so whitespace-only input also clears it |
+| `text` | string | — | Up to 2000 characters. **May be empty** — an empty string clears the banner. `null` clears it too, and the value is trimmed, so whitespace-only input also clears it |
+| `map_image` | string | — | Public URL (`http(s)`) of the floor plan shown on Home. `null` or `""` removes the map. Upload the image to a storage bucket first — this stores the URL, not the bytes |
+
+Both are optional, so the banner and the map can be edited independently, but
+sending **neither** is a 400 (`Send "text" (an empty string clears the banner)
+and/or "map_image".`) — a client bug cannot blank the banner by accident while
+clearing it stays an explicit action. A non-string `text`, or a `map_image` that is
+not an `http(s)` URL, is also a 400.
 
 ```json
 {
   "status": "Success",
   "message": "Announcement saved.",
-  "data": { "text": "Keynote moved to 10am.", "updated_by": "88fd8fc0-...", "updated_at": "..." }
+  "data": { "text": "Keynote moved to 10am.", "map_image": null, "updated_by": "88fd8fc0-...", "updated_at": "..." }
 }
 ```
 
-The message is `Announcement cleared.` when the result is empty. `updated_by` is
-set to the admin who saved it; `updated_at` is maintained by a trigger.
-
-Omitting `text` entirely is a 400 (`"text" is required. Send an empty string to
-clear the announcement.`), so a client bug can't blank the banner by accident
-while clearing it stays an explicit action. A non-string `text` is also a 400.
+The message is `Announcement cleared.` when the resulting text is empty, and
+`Map updated.` when only `map_image` was sent. `updated_by` is set to the admin who
+saved it; `updated_at` is maintained by a trigger.
 
 ### Errors (all routes)
 
@@ -1431,3 +1804,27 @@ These have no endpoint. The ones marked *SDK* need no backend work — call
 | Profile image upload | Built — `PUT user/profile` uploads to the `profile-images` bucket, see [§4.2](#42-put-userprofile--update-my-profile) |
 | Sending push notifications | Rows can be inserted into `notifications` server-side, but nothing delivers to FCM/APNs yet |
 | Sponsor management | The `sponsors` table is read over REST (see §5); rows are added in Studio or by the service role, there is no admin route for them yet |
+| Admin: agenda, missions, QR codes, leaderboard | **Deliberately not built** — the user side is done ([§6](#6-home-missions-qr-codes-and-the-leaderboard), [§7](#7-agenda)); authoring events, missions and QR codes is done in Studio or by the service role for now. `public.mint_qr_codes()` mints a batch of codes to print — see below |
+| Admin: approve invite-only requests | Not built. Attendees can already express interest ([§7.4](#74-post-useragendaschedule--add-remove-or-ask)); approving means setting `public.user_agenda.status` to `approved` or `rejected`, which awards the mission XP through the same trigger. Until there is a route, an admin does it in Studio |
+| Admin: usage statistics | Not built. The numbers the FRD asks for are all derivable — sessions added (`user_agenda`), total XP (`leaderboard`), per-event interest (`user_agenda` grouped by `agenda_id`) |
+| Admin: mark an attendee as having shown up | Not built. `public.agenda_checkins` is the table it would write, and scanning the session's QR code already does it for the attendee |
+
+### Minting QR codes to print
+
+There is no endpoint for this on purpose — the codes are created once, before the
+event, by whoever is printing them:
+
+```sql
+select * from public.mint_qr_codes('activation', 'Activation', 12, 'visit_activation');
+select * from public.mint_qr_codes('zone',       'Zone',        8, 'explore_zone');
+select * from public.mint_qr_codes('nerd_flex',  'Nerd Flex lanyard', 1, 'nerd_flex');
+
+-- A session check-in code, worth that event's xp_value:
+select * from public.mint_qr_codes('session', 'Stablecoins in 2027', 1, null, '<agenda-uuid>');
+```
+
+Each row returns a `qr_code` slug. Print `https://<app>/q/<slug>` as a QR image,
+place it physically, and the attendee's scan lands on
+[`POST user/qr/scan`](#63-post-userqrscan--claim-a-scanned-qr-code). Edit the
+generated `label` afterwards so the app's "you earned…" copy names the real booth.
+Set `is_active = false` to retire a code without losing its scan history.
