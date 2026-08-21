@@ -23,7 +23,7 @@ on:
           - production
         default: staging
 
-# Two deploys to the same project at once would race on the migration history.
+# Two deploys to the same project at once would race on the migration history
 concurrency:
   group: supabase-deploy-${{ github.event.inputs.target || github.ref_name }}
   cancel-in-progress: false
