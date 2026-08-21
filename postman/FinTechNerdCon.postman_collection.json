@@ -641,47 +641,6 @@
               }
             }
           ]
-        },
-        {
-          "name": "Sponsors",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/functions/v1/config/sponsors",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "functions",
-                "v1",
-                "config",
-                "sponsors"
-              ]
-            },
-            "description": "Event sponsors: `{ id, name, company_name, description, profile_image }`, ordered by sort_order then name. Inactive rows are left out.\n\nNo session needed — same public, CDN-cached function as the other lookup lists, and they are also in the \"All config\" payload under `sponsors`."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "pm.test('sponsor list', () => {",
-                  "  pm.expect(body.success).to.eql(true);",
-                  "  pm.expect(body.data.sponsors).to.be.an('array');",
-                  "});"
-                ]
-              }
-            }
-          ]
         }
       ]
     },
@@ -2777,7 +2736,7 @@
     },
     {
       "name": "Z. Not used by the app (direct REST)",
-      "description": "Kept for debugging and for anyone poking at the tables directly. The app should call the edge functions instead:\n\n- guilds / configs → **2. Config** (`GET config`, `GET config/sponsors`)\n- chat create / participants / messages → **7. Chat** (`chat/create`, `chat/list`, `chat/details/{id}`, `chat/send/{id}`)\n\nThese still work — the RLS policies allow them — but the function routes do the multi-step writes in one transaction and return the shapes the screens need. See postman/API.md §8.6.",
+      "description": "Kept for debugging and for anyone poking at the tables directly. The app should call the edge functions instead:\n\n- guilds / configs → **2. Config** (`GET config`)\n- chat create / participants / messages → **7. Chat** (`chat/create`, `chat/list`, `chat/details/{id}`, `chat/send/{id}`)\n\nThese still work — the RLS policies allow them — but the function routes do the multi-step writes in one transaction and return the shapes the screens need. See postman/API.md §8.6.",
       "item": [
         {
           "name": "Guilds",

@@ -11,7 +11,6 @@ chat, missions, notifications — see [../../postman/API.md](../../postman/API.m
 | Email a password reset code | `POST /functions/v1/forgot-password` | anon key |
 | Set a new password with that code | `POST /functions/v1/reset-password` | anon key |
 | Lookup lists (guilds, user types, days, stages) | `GET /functions/v1/config` | anon key |
-| Lookup lists incl. sponsors | `GET /functions/v1/config/sponsors` | anon key |
 | My profile | `GET /functions/v1/user/profile` | user token |
 | Update my profile (incl. picture upload) | `PUT /functions/v1/user/profile` | user token |
 | Another attendee's profile | `GET /functions/v1/user/profile/{id}` | user token |

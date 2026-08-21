@@ -1,13 +1,12 @@
 // GET config
 //   /functions/v1/config              → every lookup list in one payload
 //   /functions/v1/config/guilds       → guilds only
-//   /functions/v1/config/sponsors     → sponsors only
 //   /functions/v1/config/user_type    → one config type only
 //   /functions/v1/config?type=user_type,event-day
 //
 // Serves the reference data the app needs to render pickers and its static
-// screens: guilds, the event sponsors, and the public.configs rows grouped by
-// their type.
+// screens: guilds and the public.configs rows grouped by their type. Sponsors
+// are deliberately not part of this payload — read public.sponsors directly.
 //
 // This runs on the service role and is reachable without a session on purpose:
 // the register screen needs the guild and user_type lists before the user has a
@@ -18,11 +17,10 @@ import { json } from "../_shared/http.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const GUILDS_KEY = "guilds";
-const SPONSORS_KEY = "sponsors";
 
-// Both are real tables rather than configs.type values, so an empty result is a
-// legitimate answer for them and not the "unknown type" typo case below.
-const TABLE_KEYS = [GUILDS_KEY, SPONSORS_KEY];
+// A real table rather than a configs.type value, so an empty result is a
+// legitimate answer for it and not the "unknown type" typo case below.
+const TABLE_KEYS = [GUILDS_KEY];
 
 // Reference data changes rarely, so let clients and the CDN hold it briefly.
 const cacheHeaders = { "Cache-Control": "public, max-age=300" };
@@ -58,39 +56,38 @@ Deno.serve(async (req) => {
   // ?type=a,b takes over when no path segment was given.
   const requested = segment
     ? [segment]
-    : (url.searchParams.get("type")?.split(",").map((t) => t.trim()).filter(Boolean) ?? []);
+    : (url.searchParams
+        .get("type")
+        ?.split(",")
+        .map((t) => t.trim())
+        .filter(Boolean) ?? []);
 
   try {
     const service = serviceClient();
     const wantsGuilds = requested.length === 0 || requested.includes(GUILDS_KEY);
-    const wantsSponsors = requested.length === 0 || requested.includes(SPONSORS_KEY);
     const configTypes = requested.filter((t) => !TABLE_KEYS.includes(t));
 
-    const [guildsResult, sponsorsResult, configsResult] = await Promise.all([
+    const [guildsResult, configsResult] = await Promise.all([
       wantsGuilds
         ? service.from("guilds").select("id, name, description").order("id")
         : Promise.resolve({ data: [], error: null }),
-      // Inactive sponsors are kept in the table but not served.
-      wantsSponsors
-        ? service
-          .from("sponsors")
-          .select("id, name, company_name, description, profile_image")
-          .eq("is_active", true)
-          .order("sort_order")
-          .order("name")
-        : Promise.resolve({ data: [], error: null }),
       requested.length === 0 || configTypes.length > 0
         ? (() => {
-          const query = service.from("configs").select("id, type, name, description").order("id");
-          return configTypes.length > 0 ? query.in("type", configTypes) : query;
-        })()
+            const query = service
+              .from("configs")
+              .select("id, type, name, description")
+              .order("id");
+            return configTypes.length > 0
+              ? query.in("type", configTypes)
+              : query;
+          })()
         : Promise.resolve({ data: [], error: null }),
     ]);
 
-    if (guildsResult.error || sponsorsResult.error || configsResult.error) {
+    if (guildsResult.error || configsResult.error) {
       console.error(
         "config lookup failed",
-        guildsResult.error ?? sponsorsResult.error ?? configsResult.error,
+        guildsResult.error ?? configsResult.error,
       );
       return json(
         { success: false, message: "Something went wrong. Please try again." },
@@ -102,12 +99,14 @@ Deno.serve(async (req) => {
     // up here without a code change.
     const data: Record<string, unknown[]> = {};
     if (wantsGuilds) data[GUILDS_KEY] = guildsResult.data ?? [];
-    if (wantsSponsors) data[SPONSORS_KEY] = sponsorsResult.data ?? [];
     // description is carried through for every type so the shape is uniform;
     // only user_type has copy today, so it is null elsewhere.
-    for (const row of (configsResult.data ?? []) as Array<
-      { id: number; type: string; name: string; description: string | null }
-    >) {
+    for (const row of (configsResult.data ?? []) as Array<{
+      id: number;
+      type: string;
+      name: string;
+      description: string | null;
+    }>) {
       (data[row.type] ??= []).push({
         id: row.id,
         name: row.name,
@@ -123,16 +122,20 @@ Deno.serve(async (req) => {
     // has rows, so empty means unknown — except for the real tables, which may
     // legitimately be empty.
     if (
-      segment && !TABLE_KEYS.includes(segment) &&
+      segment &&
+      !TABLE_KEYS.includes(segment) &&
       (data[segment] as unknown[] | undefined)?.length === 0
     ) {
       const { data: known } = await service.from("configs").select("type");
       const types = [...new Set((known ?? []).map((r) => r.type as string))];
-      return cached({
-        success: false,
-        message: `Unknown config type "${segment}".`,
-        available: [...TABLE_KEYS, ...types.sort()],
-      }, 404);
+      return cached(
+        {
+          success: false,
+          message: `Unknown config type "${segment}".`,
+          available: [...TABLE_KEYS, ...types.sort()],
+        },
+        404,
+      );
     }
 
     return cached({ success: true, data });

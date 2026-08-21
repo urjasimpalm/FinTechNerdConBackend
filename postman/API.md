@@ -817,7 +817,6 @@ user has a token.
 | --- | --- |
 | `GET /functions/v1/config` | Everything |
 | `GET /functions/v1/config/guilds` | `guilds` only |
-| `GET /functions/v1/config/sponsors` | `sponsors` only |
 | `GET /functions/v1/config/user_type` | That one config type |
 | `GET /functions/v1/config?type=event-day,stage-type` | Several types (comma-separated) |
 
@@ -836,15 +835,6 @@ user has a token.
       { "id": 1, "name": "AI & Agentic Systems", "description": null },
       { "id": 2, "name": "Banking", "description": null }
     ],
-    "sponsors": [
-      {
-        "id": 1,
-        "name": "Simon Taylor",
-        "company_name": "Sardine",
-        "description": "Headline sponsor.",
-        "profile_image": "https://.../sponsors/sardine.png"
-      }
-    ],
     "user_type":   [{ "id": 1, "name": "Builder", "description": "I create products, tools, and systems." }, { "id": 2, "name": "Operator", "description": "I run and optimize processes to keep things moving." }, { "id": 3, "name": "Explorer", "description": "I discover new ideas, markets, and opportunities." }],
     "event-quest": [{ "id": 4, "name": "Main Quests", "description": null }, { "id": 5, "name": "Side Quests", "description": null }, { "id": 6, "name": "Bonus Quests", "description": null }, { "id": 7, "name": "My Schedule", "description": null }],
     "event-day":   [{ "id": 8, "name": "Day 0", "description": null }, { "id": 9, "name": "Day 1", "description": null }, { "id": 10, "name": "Day 2", "description": null }],
@@ -853,16 +843,14 @@ user has a token.
 }
 ```
 
-`sponsors` rows are `{ id, name, company_name, description, profile_image }`,
-ordered by `sort_order` then name, and inactive ones are left out. Everything else
-is `{ id, name, description }`, where `description` is only populated for
+Every row is `{ id, name, description }`, where `description` is only populated for
 `user_type` today — guilds are names only, and the other config types have no
 copy — so treat `null` as "nothing to show" rather than an error. `guilds` has 15
 rows; the sample above is trimmed.
 
 | Status | Body |
 | --- | --- |
-| 200 | above — config rows are `{ id, name, description }` (`description` null except for `user_type`); `sponsors` rows carry `company_name` and `profile_image` too |
+| 200 | above — config rows are `{ id, name, description }` (`description` null except for `user_type`) |
 | 404 | `{ "success": false, "message": "Unknown config type \"typo\".", "available": ["guilds", "event-day", ...] }` — path form only |
 | 405 | `{ "success": false, "message": "Method not allowed." }` — GET only |
 
@@ -1442,4 +1430,4 @@ These have no endpoint. The ones marked *SDK* need no backend work — call
 | Delete account | Partly — `DELETE /rest/v1/users?id=eq.<my-id>` removes the profile, but the `auth.users` row survives, so the email cannot be re-registered. Needs an edge function to do both |
 | Profile image upload | Built — `PUT user/profile` uploads to the `profile-images` bucket, see [§4.2](#42-put-userprofile--update-my-profile) |
 | Sending push notifications | Rows can be inserted into `notifications` server-side, but nothing delivers to FCM/APNs yet |
-| Sponsor management | The `sponsors` table is read by `GET config/sponsors`; rows are added in Studio or by the service role, there is no admin route for them yet |
+| Sponsor management | The `sponsors` table is read over REST (see §5); rows are added in Studio or by the service role, there is no admin route for them yet |
