@@ -23,10 +23,23 @@ create table if not exists public.qr_codes (
   id integer generated always as identity primary key,
   /*
    * The slug in the printed URL, and the only secret involved: knowing it is what
-   * proves you stood in front of the poster. 8 random bytes as hex — long enough
-   * that it cannot be guessed, short enough to survive being printed small.
+   * proves you stood in front of the poster. 16 hex characters — 64 bits, long
+   * enough that it cannot be guessed, short enough to survive being printed small.
+   *
+   * Derived from gen_random_uuid() rather than encode(gen_random_bytes(8), 'hex')
+   * on purpose. gen_random_bytes() comes from pgcrypto, which hosted Supabase
+   * projects install into the `extensions` schema — not on the search_path a
+   * migration runs with — so the unqualified call fails with 42883 "function
+   * gen_random_bytes(integer) does not exist". gen_random_uuid() is a *built-in*
+   * (pg_catalog) as of PostgreSQL 13, so it resolves the same way in every
+   * environment, which is why every other table here already defaults to it.
+   *
+   * A v4 UUID carries 122 random bits; taking the first 16 hex characters keeps 64
+   * of them, and the unique constraint catches a collision rather than trusting it
+   * cannot happen.
    */
-  code text not null unique default encode(gen_random_bytes(8), 'hex'),
+  code text not null unique
+    default substr(replace(gen_random_uuid()::text, '-', ''), 1, 16),
   -- Which of the sheet's QR uses this is. Reporting and the response copy; the
   -- award itself is decided by mission_id / agenda_id.
   kind text not null
