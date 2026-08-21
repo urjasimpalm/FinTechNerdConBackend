@@ -11,7 +11,7 @@
 // transaction in the database rather than three calls from here. See
 // supabase/migrations/20260822000003_qr_codes.sql.
 import { fail, ok, text } from "../_shared/http.ts";
-import { serviceClient } from "../_shared/supabase.ts";
+import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
 
 /**
  * Accepts the bare slug or the whole scanned URL.
@@ -77,7 +77,7 @@ export async function scanQrCode(
   });
 
   if (error) {
-    console.error("qr claim failed", error);
+    logDbFailure("qr claim", error);
     return fail("That code could not be claimed. Please try again.", 500);
   }
 

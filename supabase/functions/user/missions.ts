@@ -11,7 +11,7 @@
 // a client to grant itself XP. See
 // supabase/migrations/20260822000002_missions_frd.sql.
 import { fail, ok } from "../_shared/http.ts";
-import { serviceClient } from "../_shared/supabase.ts";
+import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
 
 /**
  * How each mission is earned, as one line the app can show under the description.
@@ -61,16 +61,16 @@ export async function listMissions(url: URL, viewerId: string): Promise<Response
   ]);
 
   if (catalog.error) {
-    console.error("mission catalog failed", catalog.error);
+    logDbFailure("mission catalog", catalog.error);
     return fail("Something went wrong. Please try again.", 500);
   }
   if (progress.error) {
-    console.error("mission progress failed", progress.error);
+    logDbFailure("mission progress", progress.error);
     return fail("Something went wrong. Please try again.", 500);
   }
   if (standing.error) {
     // Not fatal — the list is still worth returning without the totals.
-    console.error("leaderboard read failed", standing.error);
+    logDbFailure("mission list leaderboard read", standing.error);
   }
 
   const mine = new Map<number, Progress>();

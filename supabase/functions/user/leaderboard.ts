@@ -11,7 +11,7 @@
 // completions it came from.
 import { fail, ok } from "../_shared/http.ts";
 import { fetchPage, pageMeta, readPage } from "../_shared/pagination.ts";
-import { serviceClient } from "../_shared/supabase.ts";
+import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
 
 const BOARD_SELECT =
   "user_id, rank, total_points, first_name, last_name, nerd_number, company_name, job_title, profile_image, user_type_config_id";
@@ -101,7 +101,7 @@ export async function getLeaderboard(url: URL, viewerId: string): Promise<Respon
   const [result, me] = await Promise.all([fetchPage(build, page), myCard(viewerId)]);
 
   if ("error" in result) {
-    console.error("leaderboard failed", result.error);
+    logDbFailure("leaderboard", result.error);
     return fail("Something went wrong. Please try again.", 500);
   }
 

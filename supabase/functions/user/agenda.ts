@@ -17,7 +17,7 @@
 // supabase/migrations/20260822000002_missions_frd.sql.
 import { fail, integer, ok, text } from "../_shared/http.ts";
 import { fetchPage, likeTerm, pageMeta, readPage } from "../_shared/pagination.ts";
-import { serviceClient } from "../_shared/supabase.ts";
+import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
 
 /** `all` means "no filter" rather than being an error, as in user/people.ts. */
 const ALL = "all";
@@ -381,7 +381,7 @@ async function listEvents(
 
   const result = await fetchPage(build, page);
   if ("error" in result) {
-    console.error("agenda list failed", result.error);
+    logDbFailure("agenda list", result.error);
     return fail("Something went wrong. Please try again.", 500);
   }
 

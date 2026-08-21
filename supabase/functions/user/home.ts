@@ -12,7 +12,7 @@
 // null. The two navigation buttons the sheet lists ("Find more missions", "View
 // Leaderboard") are static, so they need nothing from the API.
 import { ok } from "../_shared/http.ts";
-import { serviceClient } from "../_shared/supabase.ts";
+import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
 
 // The announcement is a single row pinned to this id — see
 // supabase/migrations/20260819161552_announcements.sql.
@@ -64,7 +64,7 @@ export async function getHome(viewerId: string): Promise<Response> {
     ["standing", standing],
     ["missions", missions],
   ] as const) {
-    if (result.error) console.error(`home ${label} read failed`, result.error);
+    if (result.error) logDbFailure(`home ${label} read`, result.error);
   }
 
   const savedCount = saved.count ?? 0;

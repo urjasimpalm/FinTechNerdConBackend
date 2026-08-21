@@ -35,3 +35,50 @@ export function serviceClient(): SupabaseClient {
 }
 
 // The profile shape every endpoint returns lives in ./profile.ts.
+
+/*
+ * PostgREST error codes that mean "the API's schema cache is stale", not "the
+ * request was wrong".
+ *
+ *   PGRST200  no relationship found between two tables (a new FK or join table)
+ *   PGRST204  a column is not in the cache (a newly added column)
+ *   42703     the column really does not exist — a migration that did not run
+ *
+ * These are deployment problems: the caller cannot fix them and retrying will not
+ * help, so they are worth shouting about rather than folding into a generic
+ * "something went wrong".
+ */
+const SCHEMA_CACHE_CODES = new Set(["PGRST200", "PGRST204", "42703", "42P01"]);
+
+/**
+ * Logs a failed query with everything PostgREST actually said.
+ *
+ * `console.error("...", error)` on its own tends to render as `[object Object]`
+ * in the function logs, which is how a 400 with a precise explanation attached
+ * ends up being diagnosed by guesswork. Pull the fields out by name instead.
+ */
+export function logDbFailure(where: string, error: unknown): void {
+  const detail = error as {
+    code?: string;
+    message?: string;
+    details?: string;
+    hint?: string;
+  } | null;
+
+  const code = detail?.code ?? "unknown";
+  const stale = SCHEMA_CACHE_CODES.has(code);
+
+  console.error(
+    [
+      stale ? `${where} failed — STALE SCHEMA CACHE OR MISSING MIGRATION` : `${where} failed`,
+      `code=${code}`,
+      `message=${detail?.message ?? String(error)}`,
+      detail?.details ? `details=${detail.details}` : null,
+      detail?.hint ? `hint=${detail.hint}` : null,
+      // The fix, in the log line, so nobody has to go and look it up.
+      stale
+        ? "fix=run `notify pgrst, 'reload schema';` (or redeploy) and confirm every migration in supabase/migrations applied"
+        : null,
+    ].filter(Boolean).join(" | "),
+  );
+}
