@@ -26,8 +26,23 @@ const ALL = "all";
 // 'rejected' was answered no, so neither is on it.
 const ON_SCHEDULE = ["saved", "approved"];
 
-// public.agenda has three separate foreign keys to public.configs, so an embedded
-// `configs(...)` is ambiguous and each one has to name its constraint.
+/*
+ * public.agenda has three separate foreign keys to public.configs, so an embedded
+ * `configs(...)` is ambiguous and each one has to name its constraint.
+ *
+ * public.agenda_user_types is deliberately *not* embedded here, and the audience
+ * tags are read by audiencesFor() below instead. Its primary key is exactly its
+ * two foreign keys, which PostgREST reads as a junction table and turns into a
+ * fourth route from agenda to configs — a many-to-many one. That makes a nested
+ * `agenda_user_types (configs (...))` ambiguous rather than scoped, and the whole
+ * query fails with PGRST201 "more than one relationship was found", a 400.
+ *
+ * A constraint hint on the nested embed would also resolve it, but two flat
+ * queries need no relationship inference at all, and this is already how
+ * myStates() reads the caller's own rows for the page. agenda_guilds stays
+ * embedded because public.agenda.guild_id was dropped in
+ * 20260812083442_update_agenda_schema.sql, leaving guilds exactly one route.
+ */
 const AGENDA_SELECT = `
   id, name, description, day, start_time, end_time,
   speaker_name, speaker_title, speaker_company,
@@ -37,8 +52,7 @@ const AGENDA_SELECT = `
   quest:configs!agenda_event_quest_config_id_fkey (id, name),
   event_day:configs!agenda_event_day_config_id_fkey (id, name),
   stage:configs!agenda_stage_config_id_fkey (id, name),
-  agenda_guilds (is_primary, guild:guilds (id, name)),
-  agenda_user_types (user_type:configs (id, name))
+  agenda_guilds (is_primary, guild:guilds (id, name))
 `;
 
 /**
@@ -58,10 +72,10 @@ function questSection(name: unknown): "main" | "side" | "bonus" | null {
 
 const QUEST_FILTERS = new Set(["main", "side", "bonus"]);
 
-type Lookup = { id: number; name: string } | null;
+type Named = { id: number; name: string };
+type Lookup = Named | null;
 
 type TagJoin = { is_primary: boolean; guild: Lookup };
-type UserTypeJoin = { user_type: Lookup };
 
 /** What the caller has done about an event. */
 type MyState = { status: string | null; checked_in: boolean };
@@ -79,18 +93,14 @@ const NO_STATE: MyState = { status: null, checked_in: false };
 function shapeEvent(
   row: Record<string, unknown>,
   state: MyState,
+  userTypes: Named[],
   now: number,
 ): Record<string, unknown> {
-  const {
-    agenda_guilds: tagJoins,
-    agenda_user_types: typeJoins,
-    quest,
-    ...rest
-  } = row as Record<string, unknown> & {
-    agenda_guilds?: TagJoin[];
-    agenda_user_types?: UserTypeJoin[];
-    quest?: Lookup;
-  };
+  const { agenda_guilds: tagJoins, quest, ...rest } = row as
+    Record<string, unknown> & {
+      agenda_guilds?: TagJoin[];
+      quest?: Lookup;
+    };
 
   const tags = (tagJoins ?? [])
     .filter((join) => join.guild !== null)
@@ -103,11 +113,6 @@ function shapeEvent(
     .sort((a, b) =>
       a.is_primary === b.is_primary ? a.id - b.id : a.is_primary ? -1 : 1
     );
-
-  const userTypes = (typeJoins ?? [])
-    .map((join) => join.user_type)
-    .filter((type): type is NonNullable<Lookup> => type !== null)
-    .sort((a, b) => a.id - b.id);
 
   const endsAt = rest.end_time ?? rest.start_time;
   const day = typeof rest.day === "string" ? rest.day : null;
@@ -165,6 +170,45 @@ async function myStates(
     states.set(id, { status: states.get(id)?.status ?? null, checked_in: true });
   }
   return states;
+}
+
+/**
+ * Builder / Operator / Explorer tags for a page of events.
+ *
+ * Two flat queries and a join in memory, rather than one embed — see the note on
+ * AGENDA_SELECT for why embedding this one is not safe. The second query is the
+ * whole user_type vocabulary, which is three rows, so this costs nothing.
+ */
+async function audiencesFor(agendaIds: string[]): Promise<Map<string, Named[]>> {
+  const byEvent = new Map<string, Named[]>();
+  if (agendaIds.length === 0) return byEvent;
+
+  const service = serviceClient();
+  const [links, types] = await Promise.all([
+    service.from("agenda_user_types").select("agenda_id, user_type_config_id")
+      .in("agenda_id", agendaIds),
+    service.from("configs").select("id, name").eq("type", "user_type"),
+  ]);
+  if (links.error) throw links.error;
+  if (types.error) throw types.error;
+
+  const named = new Map<number, Named>();
+  for (const row of types.data ?? []) {
+    named.set(row.id as number, { id: row.id as number, name: row.name as string });
+  }
+
+  for (const row of links.data ?? []) {
+    // Skip a link pointing at a config that is not a user_type — the trigger on
+    // the table stops those being written, but a pre-existing row could exist.
+    const match = named.get(row.user_type_config_id as number);
+    if (!match) continue;
+    const list = byEvent.get(row.agenda_id as string) ?? [];
+    list.push(match);
+    byEvent.set(row.agenda_id as string, list);
+  }
+
+  for (const list of byEvent.values()) list.sort((a, b) => a.id - b.id);
+  return byEvent;
 }
 
 /** Event ids carrying a given tag, or tagged for a given audience. */
@@ -385,11 +429,17 @@ async function listEvents(
     return fail("Something went wrong. Please try again.", 500);
   }
 
-  const states = await myStates(viewerId, result.rows.map((row) => row.id as string));
+  const ids = result.rows.map((row) => row.id as string);
+  const [states, audiences] = await Promise.all([
+    myStates(viewerId, ids),
+    audiencesFor(ids),
+  ]);
+
   const now = Date.now();
-  const events = result.rows.map((row) =>
-    shapeEvent(row, states.get(row.id as string) ?? NO_STATE, now)
-  );
+  const events = result.rows.map((row) => {
+    const id = row.id as string;
+    return shapeEvent(row, states.get(id) ?? NO_STATE, audiences.get(id) ?? [], now);
+  });
 
   return ok(message(result.total), {
     events,
@@ -541,10 +591,19 @@ export async function getEvent(viewerId: string, agendaId: string): Promise<Resp
   if (error) throw error;
   if (!data) return fail("That event could not be found.", 404);
 
-  const states = await myStates(viewerId, [agendaId]);
+  const [states, audiences] = await Promise.all([
+    myStates(viewerId, [agendaId]),
+    audiencesFor([agendaId]),
+  ]);
+
   return ok(
     "Event loaded.",
-    shapeEvent(data, states.get(agendaId) ?? NO_STATE, Date.now()),
+    shapeEvent(
+      data,
+      states.get(agendaId) ?? NO_STATE,
+      audiences.get(agendaId) ?? [],
+      Date.now(),
+    ),
   );
 }
 
