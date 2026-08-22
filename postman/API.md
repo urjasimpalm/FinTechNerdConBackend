@@ -1319,9 +1319,19 @@ The same object as one element of `events` in §7.1. `404` if the id is unknown.
 `status`, `created_at`.
 
 Tags are `agenda_guilds (agenda_id, guild_id, is_primary)` and audiences are
-`agenda_user_types (agenda_id, user_type_config_id)`. `agenda` has three separate
-FKs to `configs`, so an embedded `configs(...)` is ambiguous — name the
-constraint:
+`agenda_user_types (agenda_id, user_type_config_id)`.
+
+> **Embedding `configs` from `agenda` is a trap.** `agenda` reaches `configs` by
+> **four** routes: the three direct FKs, plus a many-to-many through
+> `agenda_user_types` (whose primary key is exactly its two FKs, which is how
+> PostgREST recognises a junction table). An unhinted `configs(...)` therefore
+> fails the *whole query* with `400 PGRST201`, and `agenda_user_types(configs(...))`
+> is ambiguous rather than scoped to the join table.
+>
+> `GET user/agenda` avoids this by not embedding at all: it selects plain columns
+> and resolves `configs` and `guilds` in memory, since both are reference tables of
+> a dozen-odd rows. If you query `agenda` directly, either do the same or name the
+> constraint on every `configs` embed:
 
 ```ts
 await supabase.from("agenda").select(`

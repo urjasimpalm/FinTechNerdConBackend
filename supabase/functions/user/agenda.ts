@@ -27,32 +27,29 @@ const ALL = "all";
 const ON_SCHEDULE = ["saved", "approved"];
 
 /*
- * public.agenda has three separate foreign keys to public.configs, so an embedded
- * `configs(...)` is ambiguous and each one has to name its constraint.
+ * Plain columns. No embedded resources at all — every lookup is resolved by
+ * loadLookups() below and joined in memory.
  *
- * public.agenda_user_types is deliberately *not* embedded here, and the audience
- * tags are read by audiencesFor() below instead. Its primary key is exactly its
- * two foreign keys, which PostgREST reads as a junction table and turns into a
- * fourth route from agenda to configs — a many-to-many one. That makes a nested
- * `agenda_user_types (configs (...))` ambiguous rather than scoped, and the whole
- * query fails with PGRST201 "more than one relationship was found", a 400.
+ * This started as one query with four embeds (three hinted `configs`, plus
+ * `agenda_guilds(guilds(...))`) and it returned 400 from PostgREST. Embeds here
+ * depend on things that are invisible from the query itself: the auto-generated
+ * constraint names `agenda_event_day_config_id_fkey` / `agenda_stage_config_id_fkey`
+ * (neither of which any working query in this project had ever exercised), and
+ * PostgREST's own relationship inference — which, because public.agenda reaches
+ * public.configs by four different routes, treats an unhinted `configs` embed as
+ * ambiguous.
  *
- * A constraint hint on the nested embed would also resolve it, but two flat
- * queries need no relationship inference at all, and this is already how
- * myStates() reads the caller's own rows for the page. agenda_guilds stays
- * embedded because public.agenda.guild_id was dropped in
- * 20260812083442_update_agenda_schema.sql, leaving guilds exactly one route.
+ * public.configs and public.guilds are reference tables of a dozen-odd rows, so
+ * fetching them whole and joining in memory costs nothing and removes that entire
+ * class of failure: the only way this select can now fail is a column that does
+ * not exist, and that error names the column.
  */
 const AGENDA_SELECT = `
   id, name, description, day, start_time, end_time,
   speaker_name, speaker_title, speaker_company,
   location, xp_value, is_sponsored, is_invite_only, capacity,
   sort_order, status,
-  event_quest_config_id, event_day_config_id, stage_config_id,
-  quest:configs!agenda_event_quest_config_id_fkey (id, name),
-  event_day:configs!agenda_event_day_config_id_fkey (id, name),
-  stage:configs!agenda_stage_config_id_fkey (id, name),
-  agenda_guilds (is_primary, guild:guilds (id, name))
+  event_quest_config_id, event_day_config_id, stage_config_id
 `;
 
 /**
@@ -75,7 +72,31 @@ const QUEST_FILTERS = new Set(["main", "side", "bonus"]);
 type Named = { id: number; name: string };
 type Lookup = Named | null;
 
-type TagJoin = { is_primary: boolean; guild: Lookup };
+type Tag = Named & { is_primary: boolean };
+
+/**
+ * Everything a page of events needs besides its own columns: the config
+ * vocabulary (quest sections, days, stages), each event's tags, and each event's
+ * audiences.
+ */
+type Lookups = {
+  configs: Map<number, Named>;
+  userTypeIds: Set<number>;
+  tags: Map<string, Tag[]>;
+  audiences: Map<string, Named[]>;
+};
+
+const NO_LOOKUPS: Lookups = {
+  configs: new Map(),
+  userTypeIds: new Set(),
+  tags: new Map(),
+  audiences: new Map(),
+};
+
+/** Map lookup that tolerates a null/absent foreign key. */
+function pick(configs: Map<number, Named>, id: unknown): Named | null {
+  return typeof id === "number" ? configs.get(id) ?? null : null;
+}
 
 /** What the caller has done about an event. */
 type MyState = { status: string | null; checked_in: boolean };
@@ -83,8 +104,9 @@ type MyState = { status: string | null; checked_in: boolean };
 const NO_STATE: MyState = { status: null, checked_in: false };
 
 /**
- * Flattens the two join arrays, splits the tags into primary and secondary, and
- * attaches the caller's own state.
+ * Turns one agenda row into the object the app renders: the config lookups
+ * resolved, the tags split into primary and secondary, and the caller's own state
+ * attached.
  *
  * `is_past` is computed here rather than filtered in the query, because the FRD
  * wants past events *shown* and greyed out ("users can look back at past days"),
@@ -93,29 +115,22 @@ const NO_STATE: MyState = { status: null, checked_in: false };
 function shapeEvent(
   row: Record<string, unknown>,
   state: MyState,
-  userTypes: Named[],
+  lookups: Lookups,
   now: number,
 ): Record<string, unknown> {
-  const { agenda_guilds: tagJoins, quest, ...rest } = row as
-    Record<string, unknown> & {
-      agenda_guilds?: TagJoin[];
-      quest?: Lookup;
-    };
+  const id = row.id as string;
 
-  const tags = (tagJoins ?? [])
-    .filter((join) => join.guild !== null)
-    .map((join) => ({
-      id: join.guild!.id,
-      name: join.guild!.name,
-      is_primary: join.is_primary === true,
-    }))
-    // Primary first, so a client that only has room for one shows the right one.
-    .sort((a, b) =>
-      a.is_primary === b.is_primary ? a.id - b.id : a.is_primary ? -1 : 1
-    );
+  const quest = pick(lookups.configs, row.event_quest_config_id);
+  const eventDay = pick(lookups.configs, row.event_day_config_id);
+  const stage = pick(lookups.configs, row.stage_config_id);
 
-  const endsAt = rest.end_time ?? rest.start_time;
-  const day = typeof rest.day === "string" ? rest.day : null;
+  // Primary first, so a client with room for only one tag shows the right one.
+  const tags = [...(lookups.tags.get(id) ?? [])].sort((a, b) =>
+    a.is_primary === b.is_primary ? a.id - b.id : a.is_primary ? -1 : 1
+  );
+
+  const endsAt = row.end_time ?? row.start_time;
+  const day = typeof row.day === "string" ? row.day : null;
   const isPast = typeof endsAt === "string"
     ? Date.parse(endsAt) < now
     // No times on the event: fall back to the day being over.
@@ -124,13 +139,17 @@ function shapeEvent(
     : false;
 
   return {
-    ...rest,
+    ...row,
+    // Named the same as the embeds this replaced, so the response shape is
+    // unchanged for the client.
     quest,
+    event_day: eventDay,
+    stage,
     quest_section: questSection(quest?.name),
     tags,
     primary_tag: tags.find((tag) => tag.is_primary) ?? null,
     secondary_tags: tags.filter((tag) => !tag.is_primary),
-    user_types: userTypes,
+    user_types: lookups.audiences.get(id) ?? [],
     is_past: isPast,
     my_status: state.status,
     is_saved: state.status !== null && ON_SCHEDULE.includes(state.status),
@@ -173,42 +192,76 @@ async function myStates(
 }
 
 /**
- * Builder / Operator / Explorer tags for a page of events.
+ * Everything a page of events needs besides its own columns, in four flat
+ * queries and no embeds.
  *
- * Two flat queries and a join in memory, rather than one embed — see the note on
- * AGENDA_SELECT for why embedding this one is not safe. The second query is the
- * whole user_type vocabulary, which is three rows, so this costs nothing.
+ * public.configs and public.guilds are reference tables — a dozen-odd rows each —
+ * so they are fetched whole rather than filtered or joined. That is what lets the
+ * agenda query itself be columns-only: see the note on AGENDA_SELECT for why the
+ * embedded version could not be relied on.
  */
-async function audiencesFor(agendaIds: string[]): Promise<Map<string, Named[]>> {
-  const byEvent = new Map<string, Named[]>();
-  if (agendaIds.length === 0) return byEvent;
-
+async function loadLookups(agendaIds: string[]): Promise<Lookups> {
   const service = serviceClient();
-  const [links, types] = await Promise.all([
-    service.from("agenda_user_types").select("agenda_id, user_type_config_id")
-      .in("agenda_id", agendaIds),
-    service.from("configs").select("id, name").eq("type", "user_type"),
+  const none = { data: [] as Record<string, unknown>[], error: null };
+
+  const [configs, guilds, tagLinks, audienceLinks] = await Promise.all([
+    service.from("configs").select("id, name, type"),
+    service.from("guilds").select("id, name"),
+    agendaIds.length
+      ? service.from("agenda_guilds").select("agenda_id, guild_id, is_primary")
+        .in("agenda_id", agendaIds)
+      : Promise.resolve(none),
+    agendaIds.length
+      ? service.from("agenda_user_types").select("agenda_id, user_type_config_id")
+        .in("agenda_id", agendaIds)
+      : Promise.resolve(none),
   ]);
-  if (links.error) throw links.error;
-  if (types.error) throw types.error;
 
-  const named = new Map<number, Named>();
-  for (const row of types.data ?? []) {
-    named.set(row.id as number, { id: row.id as number, name: row.name as string });
+  if (configs.error) throw configs.error;
+  if (guilds.error) throw guilds.error;
+  if (tagLinks.error) throw tagLinks.error;
+  if (audienceLinks.error) throw audienceLinks.error;
+
+  const configsById = new Map<number, Named>();
+  const userTypeIds = new Set<number>();
+  for (const row of configs.data ?? []) {
+    const id = row.id as number;
+    configsById.set(id, { id, name: row.name as string });
+    if (row.type === "user_type") userTypeIds.add(id);
   }
 
-  for (const row of links.data ?? []) {
-    // Skip a link pointing at a config that is not a user_type — the trigger on
+  const guildsById = new Map<number, Named>();
+  for (const row of guilds.data ?? []) {
+    const id = row.id as number;
+    guildsById.set(id, { id, name: row.name as string });
+  }
+
+  const tags = new Map<string, Tag[]>();
+  for (const row of tagLinks.data ?? []) {
+    const guild = guildsById.get(row.guild_id as number);
+    if (!guild) continue;
+    const key = row.agenda_id as string;
+    const list = tags.get(key) ?? [];
+    list.push({ ...guild, is_primary: row.is_primary === true });
+    tags.set(key, list);
+  }
+
+  const audiences = new Map<string, Named[]>();
+  for (const row of audienceLinks.data ?? []) {
+    const configId = row.user_type_config_id as number;
+    // Skip a link pointing at a config that is not a user_type. The trigger on
     // the table stops those being written, but a pre-existing row could exist.
-    const match = named.get(row.user_type_config_id as number);
+    if (!userTypeIds.has(configId)) continue;
+    const match = configsById.get(configId);
     if (!match) continue;
-    const list = byEvent.get(row.agenda_id as string) ?? [];
+    const key = row.agenda_id as string;
+    const list = audiences.get(key) ?? [];
     list.push(match);
-    byEvent.set(row.agenda_id as string, list);
+    audiences.set(key, list);
   }
+  for (const list of audiences.values()) list.sort((a, b) => a.id - b.id);
 
-  for (const list of byEvent.values()) list.sort((a, b) => a.id - b.id);
-  return byEvent;
+  return { configs: configsById, userTypeIds, tags, audiences };
 }
 
 /** Event ids carrying a given tag, or tagged for a given audience. */
@@ -430,16 +483,15 @@ async function listEvents(
   }
 
   const ids = result.rows.map((row) => row.id as string);
-  const [states, audiences] = await Promise.all([
+  const [states, lookups] = await Promise.all([
     myStates(viewerId, ids),
-    audiencesFor(ids),
+    loadLookups(ids),
   ]);
 
   const now = Date.now();
-  const events = result.rows.map((row) => {
-    const id = row.id as string;
-    return shapeEvent(row, states.get(id) ?? NO_STATE, audiences.get(id) ?? [], now);
-  });
+  const events = result.rows.map((row) =>
+    shapeEvent(row, states.get(row.id as string) ?? NO_STATE, lookups, now)
+  );
 
   return ok(message(result.total), {
     events,
@@ -512,15 +564,17 @@ export async function getAgendaDays(url: URL, viewerId: string): Promise<Respons
   const today = override || new Date().toISOString().slice(0, 10);
 
   const service = serviceClient();
-  const [events, mine] = await Promise.all([
+  // Columns only, and the day names resolved from the config map — the same
+  // reasoning as AGENDA_SELECT. loadLookups is called with no ids because only
+  // its `configs` map is needed here, not the per-event joins.
+  const [events, mine, lookups] = await Promise.all([
     service
       .from("agenda")
-      .select(
-        "id, day, event_day_config_id, event_day:configs!agenda_event_day_config_id_fkey (id, name)",
-      )
+      .select("id, day, event_day_config_id")
       .order("day", { nullsFirst: false }),
     service.from("user_agenda").select("agenda_id, status").eq("user_id", viewerId)
       .in("status", ON_SCHEDULE),
+    loadLookups([]),
   ]);
   if (events.error) throw events.error;
   if (mine.error) throw mine.error;
@@ -542,7 +596,7 @@ export async function getAgendaDays(url: URL, viewerId: string): Promise<Respons
 
   for (const row of events.data ?? []) {
     const day = (row.day as string | null) ?? null;
-    const config = row.event_day as Lookup;
+    const config = pick(lookups.configs, row.event_day_config_id);
     // Key on whichever identifies the day, so events with a date but no config
     // row (or the reverse) still group.
     const key = day ?? `config:${config?.id ?? "none"}`;
@@ -591,19 +645,14 @@ export async function getEvent(viewerId: string, agendaId: string): Promise<Resp
   if (error) throw error;
   if (!data) return fail("That event could not be found.", 404);
 
-  const [states, audiences] = await Promise.all([
+  const [states, lookups] = await Promise.all([
     myStates(viewerId, [agendaId]),
-    audiencesFor([agendaId]),
+    loadLookups([agendaId]),
   ]);
 
   return ok(
     "Event loaded.",
-    shapeEvent(
-      data,
-      states.get(agendaId) ?? NO_STATE,
-      audiences.get(agendaId) ?? [],
-      Date.now(),
-    ),
+    shapeEvent(data, states.get(agendaId) ?? NO_STATE, lookups, Date.now()),
   );
 }
 
@@ -728,12 +777,42 @@ export async function changeSchedule(
     if (insertError) throw insertError;
   }
 
-  // Re-read the mission counters, so the client can show "Add a session 3/…"
-  // moving without a second call. The award is a trigger, so it has already run.
-  const { data: earned } = await service
-    .from("user_missions")
-    .select("mission_id, times_completed, points_awarded, missions (code, title)")
-    .eq("user_id", viewerId);
+  /*
+   * Re-read the mission counters, so the client can show "Add a session 3/…"
+   * moving without a second call. The award is a trigger, so it has already run.
+   *
+   * Two flat queries rather than a `missions (code, title)` embed: the catalog is
+   * seven rows, and a write path should not be able to fail on PostgREST's
+   * relationship inference. Failures here are swallowed for the same reason — the
+   * event *was* saved, and the counters are a nicety on top of that.
+   */
+  const [progress, catalog] = await Promise.all([
+    service.from("user_missions")
+      .select("mission_id, times_completed, points_awarded")
+      .eq("user_id", viewerId),
+    service.from("missions").select("id, code, title"),
+  ]);
+  if (progress.error) logDbFailure("schedule mission counters", progress.error);
+  if (catalog.error) logDbFailure("schedule mission catalog", catalog.error);
+
+  const named = new Map<number, { code: string | null; title: string }>();
+  for (const row of catalog.data ?? []) {
+    named.set(row.id as number, {
+      code: (row.code as string | null) ?? null,
+      title: row.title as string,
+    });
+  }
+
+  const earned = (progress.data ?? []).map((row) => {
+    const mission = named.get(row.mission_id as number) ?? null;
+    return {
+      mission_id: row.mission_id,
+      times_completed: Number(row.times_completed ?? 0),
+      points_awarded: Number(row.points_awarded ?? 0),
+      // Kept nested under `missions` so the response shape is unchanged.
+      missions: mission,
+    };
+  });
 
   return ok(
     action === "save"
@@ -743,7 +822,7 @@ export async function changeSchedule(
       agenda_id: agendaId,
       my_status: wanted,
       is_saved: ON_SCHEDULE.includes(wanted),
-      missions: earned ?? [],
+      missions: earned,
     },
   );
 }
