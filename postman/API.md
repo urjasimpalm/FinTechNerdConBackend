@@ -884,6 +884,50 @@ Note the two `type=` forms differ on unknown values on purpose: a bad path
 segment is a typo and returns 404, while `?type=nope` returns `{"nope": []}` so
 a multi-type request isn't derailed by one bad entry.
 
+### `GET config/sponsors` — the sponsor list
+
+```ts
+const { data } = await supabase.functions.invoke("config/sponsors", { method: "GET" });
+```
+
+| Parameter | Meaning |
+| --- | --- |
+| `search` | Matches sponsor name or company name |
+| `include_inactive` | `true` to include retired sponsors. Off by default |
+
+```json
+{
+  "success": true,
+  "data": {
+    "sponsors": [
+      {
+        "id": 1,
+        "name": "Jane Okafor",
+        "company_name": "Acme Payments",
+        "description": "Payment rails for the rest of us.",
+        "profile_image": "https://…/acme.png",
+        "sort_order": 1,
+        "is_active": true
+      }
+    ]
+  }
+}
+```
+
+Ordered by `sort_order`, then name. `is_active = false` is how a sponsor is taken
+down without deleting the row, so those are hidden unless you ask for them.
+
+Needs no session (this function is `verify_jwt = false`) and is CDN-cached for 5
+minutes like the rest of §5 — the sponsor screen is public event content.
+
+**Sponsors are not in the bare `GET config` payload** and have to be asked for by
+name. That call is what the register screen makes before the user has a token, and
+it shouldn't carry a screen's worth of logos and copy that the register screen has
+no use for. `GET config?type=sponsors,guilds` works if you want both in one call.
+
+Adding, editing and removing sponsors has no route — rows are managed in Studio or
+by the service role. See [§12](#12-not-built-yet).
+
 ### Direct table access (signed-in users)
 
 The same data is readable over REST once the user has a token, if you'd rather
@@ -1083,6 +1127,7 @@ table could claim every mission from the hotel bar.
         "job_title": "Engineer",
         "profile_image": null,
         "user_type_config_id": 1,
+        "last_award_at": "2026-09-01T14:22:08.51Z",
         "is_me": false
       }
     ],
@@ -1092,6 +1137,12 @@ table could claim every mission from the hotel bar.
 }
 ```
 
+- **Ranks are unique — no two attendees share a number.** Equal totals are ordered
+  by who reached the total first, so `rank` is a total order and "you are 7th"
+  always means exactly one person is 7th. Order by `rank` alone; no secondary sort
+  key is needed, and the order is stable between requests.
+- `last_award_at` is the tie-break key: when that attendee reached their current
+  total. Earlier ranks higher.
 - `me` is the caller's own card for the panel under the list, always present —
   even when they are also in `entries` (`is_me` marks that row).
 - Someone who has earned nothing has `rank: null` and `total_xp: 0`: they are
@@ -1099,6 +1150,8 @@ table could claim every mission from the hotel bar.
 - `user_id` is what `GET user/profile/{id}` takes, for "click a name to view their
   profile".
 - Admin accounts are excluded, as everywhere else in the attendee-facing API.
+- Totals can go **down** (see [§6.5](#65-how-xp-is-earned)), so treat the board as
+  live rather than monotonic.
 
 ### 6.5 How XP is earned
 
@@ -1106,24 +1159,31 @@ Every award happens server-side. There is **no endpoint that grants XP on
 request** — the two triggers and the QR claim function below are the only paths,
 so a client cannot promote itself.
 
-| Mission (`code`) | Earned by | Counts once per | Repeatable |
-| --- | --- | --- | --- |
-| `book_first_quest` | Saving a **Bonus Quest** (offsite) event | event | no |
-| `add_session` | Saving a **Main/Side Quest** event | event | yes |
-| `visit_activation` | Scanning a sponsor-booth QR | QR code | yes |
-| `connect_nerd` | A connection being accepted (**both** people earn it) | person | yes |
-| `explore_zone` | Scanning a zone QR | QR code | yes |
-| `nerd_flex` | Scanning the lanyard QR | — | no |
-| `quest_master` | Every other mission completed — awarded automatically | — | no |
+| Mission (`code`) | Earned by | Counts once per | Repeatable | Taken back? |
+| --- | --- | --- | --- | --- |
+| `book_first_quest` | Saving a **Bonus Quest** (offsite) event | event | no | yes — on unsave |
+| `add_session` | Saving a **Main/Side Quest** event | event | yes | yes — on unsave |
+| `visit_activation` | Scanning a sponsor-booth QR | QR code | yes | no |
+| `connect_nerd` | A connection being accepted (**both** people earn it) | person | yes | no |
+| `explore_zone` | Scanning a zone QR | QR code | yes | no |
+| `nerd_flex` | Scanning the lanyard QR | — | no | no |
+| `quest_master` | Every other mission completed — awarded automatically | — | no | yes — if a prerequisite is |
 
-Two consequences worth building against:
+Three consequences worth building against:
 
-- **Removing and re-adding a session does not count twice.** The completion is
-  keyed on the event, so the counter does not move on a re-add — and it does not
-  go *down* when you remove it either.
-- **Session XP is separate from mission XP.** Saving an event earns the mission;
-  *attending* it (scanning its QR) banks the event's own `xp_value`. The
-  leaderboard total is the sum of both.
+- **XP goes down when an event leaves the schedule.** Unsaving takes back exactly
+  the XP that saving earned, and the "Times Completed" counter drops with it, so
+  the number always reflects the schedule as it currently stands. This is not
+  farmable: every add is matched by a remove, so churning an event lands on the
+  same total as adding it once.
+  `POST user/agenda/schedule` returns the updated `missions` counters and
+  `total_xp` on **both** directions, so the screen never has to guess.
+- **Quest Master can be revoked.** It means "every other mission is complete", so
+  it is withdrawn if that stops being true.
+- **Session XP is separate from mission XP, and is never taken back.** Saving an
+  event earns the mission; *attending* it (scanning its QR) banks the event's own
+  `xp_value`. Un-scheduling an event you already attended does not un-attend it.
+  The leaderboard total is the sum of both.
 
 ### 6.6 Direct table access
 
@@ -1280,9 +1340,9 @@ await supabase.functions.invoke("user/agenda/schedule", {
 
 | Action | For | Result |
 | --- | --- | --- |
-| `save` | Open events | `my_status: "saved"`. **409** on an invite-only event — use `interest` |
-| `interest` | Invite-only events | `my_status: "interested"`, awaiting an admin. **409** on an open event |
-| `unsave` / `withdraw` | Either | The row is removed; `my_status: null` |
+| `save` | Open events | `my_status: "saved"`, mission XP awarded. **409** on an invite-only event — use `interest` |
+| `interest` | Invite-only events | `my_status: "interested"`, awaiting an admin. No XP until approved. **409** on an open event |
+| `unsave` / `withdraw` | Either | The row is removed, `my_status: null`, and **the XP that saving earned is taken back** |
 
 ```json
 {
@@ -1294,13 +1354,15 @@ await supabase.functions.invoke("user/agenda/schedule", {
     "is_saved": true,
     "missions": [
       { "mission_id": 2, "times_completed": 3, "points_awarded": 150, "missions": { "code": "add_session", "title": "Add a session to your schedule" } }
-    ]
+    ],
+    "total_xp": 250
   }
 }
 ```
 
-`missions` is the caller's progress **after** the write, so the "Add a session
-3/…" counter can move without a second call.
+`missions` and `total_xp` are the caller's standing **after** the write, on every
+action — so the "Add a session 3/…" counter moves both up on `save` and back down
+on `unsave` without a second call.
 
 Repeating an action you have already taken answers 200 with the current state
 rather than erroring — and an `approved` row is never quietly downgraded to
@@ -1813,7 +1875,7 @@ These have no endpoint. The ones marked *SDK* need no backend work — call
 | Delete account | Partly — `DELETE /rest/v1/users?id=eq.<my-id>` removes the profile, but the `auth.users` row survives, so the email cannot be re-registered. Needs an edge function to do both |
 | Profile image upload | Built — `PUT user/profile` uploads to the `profile-images` bucket, see [§4.2](#42-put-userprofile--update-my-profile) |
 | Sending push notifications | Rows can be inserted into `notifications` server-side, but nothing delivers to FCM/APNs yet |
-| Sponsor management | The `sponsors` table is read over REST (see §5); rows are added in Studio or by the service role, there is no admin route for them yet |
+| Sponsor management | Reading is built — `GET config/sponsors`, see [§5](#5-config--reference-data). *Writing* has no route: rows are added in Studio or by the service role |
 | Admin: agenda, missions, QR codes, leaderboard | **Deliberately not built** — the user side is done ([§6](#6-home-missions-qr-codes-and-the-leaderboard), [§7](#7-agenda)); authoring events, missions and QR codes is done in Studio or by the service role for now. `public.mint_qr_codes()` mints a batch of codes to print — see below |
 | Admin: approve invite-only requests | Not built. Attendees can already express interest ([§7.4](#74-post-useragendaschedule--add-remove-or-ask)); approving means setting `public.user_agenda.status` to `approved` or `rejected`, which awards the mission XP through the same trigger. Until there is a route, an admin does it in Studio |
 | Admin: usage statistics | Not built. The numbers the FRD asks for are all derivable — sessions added (`user_agenda`), total XP (`leaderboard`), per-event interest (`user_agenda` grouped by `agenda_id`) |

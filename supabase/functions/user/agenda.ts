@@ -12,9 +12,11 @@
 // out.
 //
 // Saving a Main or Side Quest earns the "Add a session" mission and saving a
-// Bonus Quest earns "Book Your First Quest" — awarded by a trigger on
-// public.user_agenda, not here, so it holds however the row was written. See
-// supabase/migrations/20260822000002_missions_frd.sql.
+// Bonus Quest earns "Book Your First Quest"; removing the event takes that XP
+// back. Both directions are triggers on public.user_agenda rather than logic here,
+// so they hold however the row was written. See
+// supabase/migrations/20260822000002_missions_frd.sql and
+// supabase/migrations/20260822000007_revoke_xp_on_unsave.sql.
 import { fail, integer, ok, text } from "../_shared/http.ts";
 import { fetchPage, likeTerm, pageMeta, readPage } from "../_shared/pagination.ts";
 import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
@@ -656,6 +658,65 @@ export async function getEvent(viewerId: string, agendaId: string): Promise<Resp
   );
 }
 
+/*
+ * The caller's mission counters, so a schedule change can report the new numbers
+ * without the client making a second call. Both directions matter now: adding an
+ * event pushes "Add a session" up, removing one pushes it back down.
+ *
+ * Two flat queries rather than a `missions (code, title)` embed — the catalog is
+ * seven rows, and a write path should not be able to fail on PostgREST's
+ * relationship inference. Failures are logged and swallowed for the same reason:
+ * the schedule change itself already succeeded, and the counters are a nicety on
+ * top of it.
+ */
+async function missionCounters(viewerId: string): Promise<unknown[]> {
+  const service = serviceClient();
+  const [progress, catalog] = await Promise.all([
+    service.from("user_missions")
+      .select("mission_id, times_completed, points_awarded")
+      .eq("user_id", viewerId),
+    service.from("missions").select("id, code, title"),
+  ]);
+  if (progress.error) logDbFailure("schedule mission counters", progress.error);
+  if (catalog.error) logDbFailure("schedule mission catalog", catalog.error);
+
+  const named = new Map<number, { code: string | null; title: string }>();
+  for (const row of catalog.data ?? []) {
+    named.set(row.id as number, {
+      code: (row.code as string | null) ?? null,
+      title: row.title as string,
+    });
+  }
+
+  return (progress.data ?? []).map((row) => ({
+    mission_id: row.mission_id,
+    times_completed: Number(row.times_completed ?? 0),
+    points_awarded: Number(row.points_awarded ?? 0),
+    // Kept nested under `missions` so the response shape matches the embed this
+    // replaced.
+    missions: named.get(row.mission_id as number) ?? null,
+  }));
+}
+
+/**
+ * The caller's XP after the change. Worth returning on both paths now that a
+ * removal lowers it — the screen that showed "+50 XP" on save needs to show the
+ * new total on unsave rather than leaving a stale number.
+ */
+async function totalXp(viewerId: string): Promise<number> {
+  const { data, error } = await serviceClient()
+    .from("leaderboard")
+    .select("total_points")
+    .eq("user_id", viewerId)
+    .maybeSingle();
+  if (error) {
+    logDbFailure("schedule total xp", error);
+    return 0;
+  }
+  // Absent from the view means nothing earned yet, which is 0 rather than null.
+  return Number(data?.total_points ?? 0);
+}
+
 const ACTIONS = ["save", "unsave", "interest", "withdraw"];
 
 /**
@@ -665,9 +726,13 @@ const ACTIONS = ["save", "unsave", "interest", "withdraw"];
  * `action` may also come from the query string, the same as
  * user/guild/membership.
  *
- * Removing an event does not take back the mission XP adding it earned: the FRD
- * is explicit that "removing and re-adding the same session will not count", so
- * the completion stays in the ledger keyed on this event and a re-add is a no-op.
+ * Removing an event takes its mission XP back, by a trigger on public.user_agenda
+ * — see 20260822000007_revoke_xp_on_unsave.sql. XP therefore tracks the schedule
+ * as it currently stands. Re-adding earns it again, which is not a farm: every add
+ * is matched by a remove, so churning lands on the same total as adding once.
+ *
+ * Session check-ins are not affected. Un-scheduling an event you already attended
+ * does not un-attend it.
  */
 export async function changeSchedule(
   body: Record<string, unknown>,
@@ -720,7 +785,15 @@ export async function changeSchedule(
       wasInterest
         ? `Your interest in ${event.name} was withdrawn.`
         : `${event.name} was removed from your schedule.`,
-      { agenda_id: agendaId, my_status: null, is_saved: false },
+      {
+        agenda_id: agendaId,
+        my_status: null,
+        is_saved: false,
+        // Read after the delete, so these are the reduced counters: the trigger
+        // has already taken back the XP that scheduling this event earned.
+        missions: await missionCounters(viewerId),
+        total_xp: await totalXp(viewerId),
+      },
     );
   }
 
@@ -777,43 +850,6 @@ export async function changeSchedule(
     if (insertError) throw insertError;
   }
 
-  /*
-   * Re-read the mission counters, so the client can show "Add a session 3/…"
-   * moving without a second call. The award is a trigger, so it has already run.
-   *
-   * Two flat queries rather than a `missions (code, title)` embed: the catalog is
-   * seven rows, and a write path should not be able to fail on PostgREST's
-   * relationship inference. Failures here are swallowed for the same reason — the
-   * event *was* saved, and the counters are a nicety on top of that.
-   */
-  const [progress, catalog] = await Promise.all([
-    service.from("user_missions")
-      .select("mission_id, times_completed, points_awarded")
-      .eq("user_id", viewerId),
-    service.from("missions").select("id, code, title"),
-  ]);
-  if (progress.error) logDbFailure("schedule mission counters", progress.error);
-  if (catalog.error) logDbFailure("schedule mission catalog", catalog.error);
-
-  const named = new Map<number, { code: string | null; title: string }>();
-  for (const row of catalog.data ?? []) {
-    named.set(row.id as number, {
-      code: (row.code as string | null) ?? null,
-      title: row.title as string,
-    });
-  }
-
-  const earned = (progress.data ?? []).map((row) => {
-    const mission = named.get(row.mission_id as number) ?? null;
-    return {
-      mission_id: row.mission_id,
-      times_completed: Number(row.times_completed ?? 0),
-      points_awarded: Number(row.points_awarded ?? 0),
-      // Kept nested under `missions` so the response shape is unchanged.
-      missions: mission,
-    };
-  });
-
   return ok(
     action === "save"
       ? `${event.name} was added to your schedule.`
@@ -822,7 +858,8 @@ export async function changeSchedule(
       agenda_id: agendaId,
       my_status: wanted,
       is_saved: ON_SCHEDULE.includes(wanted),
-      missions: earned,
+      missions: await missionCounters(viewerId),
+      total_xp: await totalXp(viewerId),
     },
   );
 }

@@ -8,13 +8,18 @@
 // Reads public.leaderboard_people, which is public.leaderboard (mission XP plus
 // session check-in XP, admins excluded) with the card fields joined on. Nothing
 // writes a total anywhere: it is derived, so it cannot fall out of step with the
-// completions it came from.
+// completions it came from — including downwards, when an attendee takes an event
+// off their schedule.
+//
+// Ranks are unique: no two attendees share a number. Equal totals are ordered by
+// who reached the total first (`last_award_at`), so "you are 7th" always means
+// exactly one person is 7th.
 import { fail, ok } from "../_shared/http.ts";
 import { fetchPage, pageMeta, readPage } from "../_shared/pagination.ts";
 import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
 
 const BOARD_SELECT =
-  "user_id, rank, total_points, first_name, last_name, nerd_number, company_name, job_title, profile_image, user_type_config_id";
+  "user_id, rank, total_points, last_award_at, first_name, last_name, nerd_number, company_name, job_title, profile_image, user_type_config_id";
 
 // The sheet's "displays top 15 rankings".
 const DEFAULT_LIMIT = 15;
@@ -38,6 +43,10 @@ function shapeEntry(row: Row, viewerId: string): Record<string, unknown> {
     job_title: row.job_title,
     profile_image: row.profile_image,
     user_type_config_id: row.user_type_config_id,
+    // When this attendee reached their current total. It is the tie-break key
+    // behind `rank`, so the client can explain why two equal scores are ordered
+    // the way they are.
+    last_award_at: row.last_award_at ?? null,
     is_me: row.user_id === viewerId,
   };
 }
@@ -93,10 +102,10 @@ export async function getLeaderboard(url: URL, viewerId: string): Promise<Respon
     service
       .from("leaderboard_people")
       .select(BOARD_SELECT, { count: "exact", head: headOnly })
-      .order("rank")
-      // Ties share a rank, so without a second key their order would drift
-      // between requests and the list would appear to shuffle while scrolling.
-      .order("nerd_number");
+      // rank is unique now (row_number, tie-broken by who reached the total
+      // first — see 20260822000008_leaderboard_unique_rank.sql), so this is a
+      // total order on its own and no secondary key is needed.
+      .order("rank");
 
   const [result, me] = await Promise.all([fetchPage(build, page), myCard(viewerId)]);
 

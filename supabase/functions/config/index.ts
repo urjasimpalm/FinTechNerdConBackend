@@ -1,12 +1,18 @@
 // GET config
 //   /functions/v1/config              → every lookup list in one payload
 //   /functions/v1/config/guilds       → guilds only
+//   /functions/v1/config/sponsors     → the sponsor list
 //   /functions/v1/config/user_type    → one config type only
 //   /functions/v1/config?type=user_type,event-day
 //
 // Serves the reference data the app needs to render pickers and its static
-// screens: guilds and the public.configs rows grouped by their type. Sponsors
-// are deliberately not part of this payload — read public.sponsors directly.
+// screens: guilds, the sponsor list, and the public.configs rows grouped by their
+// type.
+//
+// Sponsors have to be *asked for* — they are absent from the bare `GET config`
+// payload. That call is what the register screen makes before the user has a
+// token, and it should not carry a screen's worth of sponsor logos and copy that
+// the register screen has no use for.
 //
 // This runs on the service role and is reachable without a session on purpose:
 // the register screen needs the guild and user_type lists before the user has a
@@ -14,13 +20,20 @@
 // users under RLS.
 import { corsHeaders } from "../_shared/cors.ts";
 import { json } from "../_shared/http.ts";
+import { likeTerm } from "../_shared/pagination.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const GUILDS_KEY = "guilds";
+const SPONSORS_KEY = "sponsors";
 
-// A real table rather than a configs.type value, so an empty result is a
-// legitimate answer for it and not the "unknown type" typo case below.
-const TABLE_KEYS = [GUILDS_KEY];
+// Real tables rather than configs.type values, so an empty result is a legitimate
+// answer for them and not the "unknown type" typo case below.
+const TABLE_KEYS = [GUILDS_KEY, SPONSORS_KEY];
+
+// Display order, then name as the tie-break — matching the sponsors_sort_idx in
+// 20260820200835_sponsors.sql, so paging or truncating the list is stable.
+const SPONSOR_COLUMNS =
+  "id, name, company_name, description, profile_image, sort_order, is_active";
 
 // Reference data changes rarely, so let clients and the CDN hold it briefly.
 const cacheHeaders = { "Cache-Control": "public, max-age=300" };
@@ -65,9 +78,19 @@ Deno.serve(async (req) => {
   try {
     const service = serviceClient();
     const wantsGuilds = requested.length === 0 || requested.includes(GUILDS_KEY);
+    // Explicit request only — see the note at the top of this file.
+    const wantsSponsors = requested.includes(SPONSORS_KEY);
     const configTypes = requested.filter((t) => !TABLE_KEYS.includes(t));
 
-    const [guildsResult, configsResult] = await Promise.all([
+    // Retired sponsors are hidden by default: is_active = false is how a sponsor
+    // is taken down without deleting the row. ?include_inactive=true is for
+    // checking what is there.
+    const includeInactive = ["true", "1"].includes(
+      url.searchParams.get("include_inactive")?.trim().toLowerCase() ?? "",
+    );
+    const sponsorSearch = url.searchParams.get("search")?.trim() || null;
+
+    const [guildsResult, configsResult, sponsorsResult] = await Promise.all([
       wantsGuilds
         ? service.from("guilds").select("id, name, description").order("id")
         : Promise.resolve({ data: [], error: null }),
@@ -82,12 +105,28 @@ Deno.serve(async (req) => {
               : query;
           })()
         : Promise.resolve({ data: [], error: null }),
+      wantsSponsors
+        ? (() => {
+          let query = service
+            .from("sponsors")
+            .select(SPONSOR_COLUMNS)
+            .order("sort_order")
+            .order("name");
+          if (!includeInactive) query = query.eq("is_active", true);
+          // Name or company — what someone types looking for a booth.
+          if (sponsorSearch) {
+            const term = likeTerm(sponsorSearch);
+            query = query.or(`name.ilike.${term},company_name.ilike.${term}`);
+          }
+          return query;
+        })()
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
-    if (guildsResult.error || configsResult.error) {
+    if (guildsResult.error || configsResult.error || sponsorsResult.error) {
       console.error(
         "config lookup failed",
-        guildsResult.error ?? configsResult.error,
+        guildsResult.error ?? configsResult.error ?? sponsorsResult.error,
       );
       return json(
         { success: false, message: "Something went wrong. Please try again." },
@@ -99,6 +138,7 @@ Deno.serve(async (req) => {
     // up here without a code change.
     const data: Record<string, unknown[]> = {};
     if (wantsGuilds) data[GUILDS_KEY] = guildsResult.data ?? [];
+    if (wantsSponsors) data[SPONSORS_KEY] = sponsorsResult.data ?? [];
     // description is carried through for every type so the shape is uniform;
     // only user_type has copy today, so it is null elsewhere.
     for (const row of (configsResult.data ?? []) as Array<{

@@ -146,6 +146,12 @@
       "value": "",
       "description": "An agenda id with is_invite_only = true. Captured by 'Agenda (filtered)' when one exists.",
       "type": "string"
+    },
+    {
+      "key": "xp_before_remove",
+      "value": "",
+      "description": "Captured by 'Add a session' so 'Remove a session' can assert the XP dropped.",
+      "type": "string"
     }
   ],
   "item": [
@@ -649,6 +655,62 @@
                   "  const keys = Object.keys(pm.response.json().data);",
                   "  pm.expect(keys).to.include.members(['event-day', 'stage-type']);",
                   "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sponsors",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/config/sponsors?search=&include_inactive=false",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "config",
+                "sponsors"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "include_inactive",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "The sponsor list, ordered by `sort_order` then name.\n\n- `search` \u2014 matches sponsor name or company name\n- `include_inactive` \u2014 `true` also returns retired sponsors (`is_active = false` is how one is taken down without deleting the row)\n\nNeeds no session (this function is `verify_jwt = false`, so the anon key in the `apikey` header is enough) and is CDN-cached for 5 minutes \u2014 the sponsor screen is public event content.\n\n**Not included in the bare `GET config` payload**, which is what the register screen calls before the user has a token. Use `GET config?type=sponsors,guilds` to get both in one request.\n\nThere is no write route: rows are managed in Studio or by the service role."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('sponsor list', () => {",
+                  "  pm.expect(body.success).to.be.true;",
+                  "  pm.expect(body.data.sponsors).to.be.an('array');",
+                  "});",
+                  "pm.test('ordered by sort_order', () => {",
+                  "  const orders = body.data.sponsors.map(s => s.sort_order);",
+                  "  pm.expect(orders).to.eql(orders.slice().sort((a, b) => a - b));",
+                  "});",
+                  "if (!body.data.sponsors.length) console.log('No sponsors yet \u2014 insert rows into public.sponsors.');"
                 ]
               }
             }
@@ -1518,7 +1580,7 @@
                 }
               ]
             },
-            "description": "Rankings by XP \u2014 mission XP plus session check-in XP, admins excluded.\n\n`per_page` defaults to **15** (the top-15 board) and pages like every other list. `me` is the caller's own card for the panel underneath, always present even when they are also in `entries` (`is_me` marks that row).\n\nSomeone who has earned nothing is **unranked** (`rank: null`, `total_xp: 0`) rather than ranked last. `user_id` is what `GET user/profile/{id}` takes, for tapping a name."
+            "description": "Rankings by XP \u2014 mission XP plus session check-in XP, admins excluded.\n\n**Ranks are unique.** No two attendees share a number: equal totals are ordered by `last_award_at` (who reached the total first, earlier ranks higher), then by user id. So order by `rank` alone, and the order is stable between requests.\n\n`per_page` defaults to **15** (the top-15 board) and pages like every other list. `me` is the caller's own card for the panel underneath, always present even when they are also in `entries` (`is_me` marks that row).\n\nSomeone who has earned nothing is **unranked** (`rank: null`, `total_xp: 0`) rather than ranked last. `user_id` is what `GET user/profile/{id}` takes, for tapping a name.\n\nTotals can go **down** \u2014 removing an event from your schedule takes its XP back \u2014 so treat the board as live rather than monotonic."
           },
           "event": [
             {
@@ -1532,9 +1594,17 @@
                   "  pm.expect(body.data.entries).to.be.an('array');",
                   "  pm.expect(body.data.me).to.have.property('total_xp');",
                   "});",
-                  "pm.test('ranks ascend', () => {",
-                  "  const ranks = body.data.entries.map(e => e.rank);",
-                  "  pm.expect(ranks).to.eql(ranks.slice().sort((a, b) => a - b));",
+                  "const ranks = body.data.entries.map(e => e.rank);",
+                  "pm.test('ranks ascend', () => pm.expect(ranks).to.eql(ranks.slice().sort((a, b) => a - b)));",
+                  "// The whole point of row_number over rank: no shared positions.",
+                  "pm.test('ranks are unique', () => pm.expect(new Set(ranks).size).to.eql(ranks.length));",
+                  "pm.test('ties broken by time', () => {",
+                  "  const e = body.data.entries;",
+                  "  for (let i = 1; i < e.length; i++) {",
+                  "    if (e[i].total_xp === e[i - 1].total_xp && e[i].last_award_at && e[i - 1].last_award_at) {",
+                  "      pm.expect(new Date(e[i - 1].last_award_at)).to.be.at.most(new Date(e[i].last_award_at));",
+                  "    }",
+                  "  }",
                   "});",
                   "console.log('me: rank', body.data.me.rank, '\u00b7', body.data.me.total_xp, 'XP');"
                 ]
@@ -1861,8 +1931,10 @@
                   "const body = pm.response.json();",
                   "if (pm.response.code === 200) {",
                   "  pm.test('on my schedule', () => pm.expect(body.data.is_saved).to.be.true);",
+                  "  // Remembered so the remove request below can assert the XP fell.",
+                  "  pm.collectionVariables.set('xp_before_remove', body.data.total_xp);",
                   "  const session = (body.data.missions || []).find(m => m.missions && m.missions.code === 'add_session');",
-                  "  if (session) console.log('add_session x' + session.times_completed);",
+                  "  if (session) console.log('add_session x' + session.times_completed, '\u00b7 total_xp', body.data.total_xp);",
                   "} else {",
                   "  console.log('Save skipped:', pm.response.code, body.message);",
                   "}"
@@ -1872,7 +1944,7 @@
           ]
         },
         {
-          "name": "Remove a session (re-adding will NOT count again)",
+          "name": "Remove a session (XP is taken back)",
           "request": {
             "method": "POST",
             "header": [
@@ -1898,7 +1970,7 @@
                 "schedule"
               ]
             },
-            "description": "`unsave` (or `withdraw` for an interest request) deletes the row.\n\nThe mission completion is keyed on the event, so removing does **not** decrement the counter and re-adding does **not** increment it \u2014 the FRD's \"removing and re-adding the same session will not count\". Run this then re-run the save above to see the counter hold steady.",
+            "description": "`unsave` (or `withdraw` for an interest request) deletes the row **and takes back the XP that saving it earned** \u2014 a trigger on `public.user_agenda` removes the mission completion keyed on this event, so the \"Times Completed\" counter drops and the leaderboard total falls with it.\n\nThis is not farmable: every add is matched by a remove, so churning an event lands on the same total as adding it once. XP tracks the schedule as it currently stands.\n\n`missions` and `total_xp` in the response are the values **after** the removal. Session check-ins are *not* revoked \u2014 un-scheduling an event you already attended does not un-attend it.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"agenda_id\": \"{{agenda_id}}\",\n  \"action\": \"unsave\"\n}",
@@ -1917,8 +1989,17 @@
                 "exec": [
                   "pm.test('documented status', () => pm.expect([200, 400, 404, 409]).to.include(pm.response.code));",
                   "const body = pm.response.json();",
-                  "if (pm.response.code === 200) pm.test('off my schedule', () => pm.expect(body.data.my_status).to.be.null);",
-                  "else console.log('Remove skipped:', body.message);"
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('off my schedule', () => pm.expect(body.data.my_status).to.be.null);",
+                  "  pm.test('standing reported back', () => pm.expect(body.data).to.have.property('total_xp'));",
+                  "  const before = pm.collectionVariables.get('xp_before_remove');",
+                  "  if (before !== undefined && before !== '') {",
+                  "    pm.test('XP went down', () => pm.expect(body.data.total_xp).to.be.below(Number(before)));",
+                  "  } else {",
+                  "    console.log('Run the save request first to capture xp_before_remove.');",
+                  "  }",
+                  "  console.log('total_xp now', body.data.total_xp);",
+                  "} else { console.log('Remove skipped:', body.message); }"
                 ]
               }
             }
