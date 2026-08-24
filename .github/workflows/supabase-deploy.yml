@@ -47,10 +47,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Pinned, not `latest`. Resolving `latest` is the one step that calls the
+      # GitHub releases API, and Actions runners share an IP pool for
+      # unauthenticated calls, so it fails intermittently with
+      #   Error: Failed to resolve latest Supabase CLI release: rate limit exceeded
+      # A pinned version downloads the release asset directly and skips that call.
+      #
+      # It also makes deploys reproducible: on `latest`, a CLI release can change
+      # how `db push` or `functions deploy` behaves with no commit on our side.
+      #
+      # 2.115.0 is the version this project has been used with locally (see
+      # supabase/.temp/cli-latest). Bump it deliberately, and re-run a staging
+      # deploy when you do.
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.115.0
 
       - name: Check the target project is configured
         run: |
