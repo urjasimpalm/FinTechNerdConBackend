@@ -1820,18 +1820,18 @@ saved it; `updated_at` is maintained by a trigger.
 
 ### 11.6 `GET admin/stats` — Usage Statistics
 
-The Admin UI sheet's Usage Statistics screen in one call: the overall figures plus
-the per-event list.
+The Admin UI's Usage Statistics screen: three overall figures, plus the event list,
+paged.
 
 | Parameter | Meaning |
 | --- | --- |
-| `include` | `all` (default), `overview`, or `events`. Use `events` when turning a page so the overall figures aren't recomputed |
-| `hours` | Window for the "recently" figures. Default **24**, max 2160 (90 days) |
-| `page`, `per_page` | Events paging — see [§3.1](#31-pagination). Default 20 per page, max 100 |
-| `sort` | `schedule` (default, chronological), `attendees`, `checkins`, `interest`, `xp`, `name` |
-| `day` | A date (`YYYY-MM-DD`), a `configs.id` of type `event-day`, or `all` |
-| `quest` | `main`, `side`, `bonus`, a `configs.id` of type `event-quest`, or `all` |
-| `search` | Matches event name, speaker name, speaker company or location |
+| `page`, `per_page` | See [§3.1](#31-pagination). Default 20 per page, max 100 |
+
+```ts
+const { data } = await supabase.functions.invoke("admin/stats?page=1&per_page=20", {
+  method: "GET",
+});
+```
 
 ```json
 {
@@ -1839,88 +1839,49 @@ the per-event list.
   "message": "Usage statistics loaded.",
   "data": {
     "overview": {
-      "window_hours": 24,
-      "since": "2026-08-21T02:00:00+00:00",
-      "people": {
-        "total_attendees": 412,
-        "signed_in_recently": 168,
-        "registered_recently": 23,
-        "with_a_schedule": 297,
-        "with_xp": 254
-      },
-      "schedules": { "total_sessions_added": 1043, "pending_interest": 12 },
-      "xp": { "total_earned": 38150, "top_score": 450, "average_per_scoring_attendee": 150.2 },
-      "engagement": {
-        "missions_completed": 611,
-        "mission_completions_logged": 1580,
-        "connections_made": 204,
-        "qr_scans": 733,
-        "session_checkins": 486
-      },
-      "content": { "total_events": 42, "events_with_attendees": 38, "active_qr_codes": 21 }
+      "people_logged_in_last_24_hours": 168,
+      "total_sessions_added": 1043,
+      "total_xp_earned": 38150
     },
     "events": [
       {
         "id": "3f9a…",
         "name": "Stablecoins in 2027",
         "description": "…",
-        "day": "2026-09-01",
+        "day": "Day 1",
+        "date": "2026-09-01",
         "start_time": "2026-09-01T15:00:00Z",
         "end_time": "2026-09-01T15:45:00Z",
-        "location": "Main Hall",
-        "speaker_name": "Joy Adams",
-        "xp_value": 25,
-        "is_sponsored": false,
-        "is_invite_only": false,
-        "capacity": null,
-        "quest": { "id": 4, "name": "Main Quests" },
-        "quest_section": "main",
-        "event_day": { "id": 9, "name": "Day 1" },
-        "stage": { "id": 11, "name": "Stage 1" },
-        "total_attendees": 87,
-        "scheduled_count": 87,
-        "saved_count": 87,
-        "approved_count": 0,
-        "interested_count": 0,
-        "rejected_count": 0,
-        "checkin_count": 61,
-        "checkin_xp": 1525,
-        "attendance_rate": 70.1,
-        "capacity_used_percent": null
+        "total_attendees": 87
       }
     ],
-    "sort": "schedule",
-    "search": null,
-    "pagination": { "total": 42, "page": 1, "per_page": 20, "total_pages": 3, "has_next": true, "has_prev": false }
+    "pagination": {
+      "total": 42, "page": 1, "per_page": 20, "total_pages": 3,
+      "has_next": true, "has_prev": false
+    }
   }
 }
 ```
 
-**The three headline figures** the sheet names, and exactly what each counts:
+`day` is the label (`Day 1`, from `configs` where `type = 'event-day'`) and `date`
+is the calendar date — they are separate fields because the screen shows both.
+Either can be `null` if the event has no day set.
+
+`total_attendees` is how many attendees have the event on their schedule.
+
+Events come back chronologically (date, then start time). Admin accounts are
+excluded from every count on this screen: staff scheduling sessions on their own
+account would inflate the attendee numbers.
+
+**What each overall figure counts:**
 
 | Field | Definition |
 | --- | --- |
-| `people.signed_in_recently` | Attendees whose `auth.users.last_sign_in_at` falls inside the window. This is *signed in*, not *active* — someone who signed in three days ago and is still using the app on a refreshed token is not counted, because nothing records activity. **Can be `null`**, meaning the `auth.users` read was not permitted; render "unavailable", not 0 |
-| `schedules.total_sessions_added` | Rows **currently** on a schedule (`saved` + `approved`), not rows ever added. Removing an event takes its XP back ([§6.5](#65-how-xp-is-earned)), so counting historic adds would disagree with the XP total |
-| `xp.total_earned` | Summed from `public.leaderboard`, so it is the same number the leaderboard screen shows — mission XP plus session check-in XP, admins excluded |
+| `people_logged_in_last_24_hours` | Attendees whose `auth.users.last_sign_in_at` falls in the last 24 hours. This is *signed in*, not *active* — someone who signed in three days ago and is still using the app on a refreshed token is not counted, because nothing records activity. **Can be `null`**, meaning the `auth.users` read was not permitted; show "unavailable", not 0 |
+| `total_sessions_added` | Sessions on attendees' schedules **right now**, not sessions ever added. Removing an event takes its XP back ([§6.5](#65-how-xp-is-earned)), so a historic count would disagree with the XP figure beside it |
+| `total_xp_earned` | Summed from `public.leaderboard`, so it is the same number the leaderboard screen shows — mission XP plus session check-in XP, admins excluded |
 
-**Per-event fields** beyond the ones the sheet asks for:
-
-- `total_attendees` / `scheduled_count` — the same number, "how many people have
-  added this event to their schedule". `saved_count` + `approved_count` splits it.
-- `interested_count` — for invite-only events, requests waiting on an admin.
-- `checkin_count` / `checkin_xp` — who actually turned up (scanned the session's
-  QR) and the XP that paid out. Scheduled ≠ attended.
-- `attendance_rate` — check-ins as a percentage of the people who scheduled it.
-  **`null` when nobody scheduled it** — "nothing to measure", not "0% turned up".
-- `capacity_used_percent` — `null` unless the event sets a `capacity`.
-
-Admins are excluded from every count on this screen: staff scheduling sessions on
-their own account would inflate the attendee numbers.
-
-Sorting by `attendees` or `checkins` orders across the **whole** agenda, not just
-the current page — the counts are aggregated in `public.agenda_stats` rather than
-tallied per page.
+Requires an admin token; a non-admin gets `403`.
 
 ### Errors (all routes)
 

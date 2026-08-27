@@ -1,115 +1,58 @@
 // GET admin/stats — the Admin UI's Usage Statistics screen.
 //
-// The FRD's Admin UI sheet asks for four things, and they arrive together so the
-// dashboard is one call:
+// Exactly what was asked for, and nothing else:
 //
-//   overview.signed_in_recently    people logged on in the last 24 hours
-//   overview.total_sessions_added  sessions on attendees' schedules
-//   overview.total_xp_earned       XP earned across the event
-//   events[].scheduled_count       per event, how many people added it
+//   overview.people_logged_in_last_24_hours
+//   overview.total_sessions_added
+//   overview.total_xp_earned
+//   events[]  → name, description, day, date, time, total_attendees (paged)
 //
-// Overall figures come from public.admin_usage_stats(), which is one round trip
-// and the only thing that can read auth.users.last_sign_in_at. The event list
-// comes from public.agenda_stats, which aggregates in SQL so the list can be
-// sorted by popularity across the whole agenda rather than a page at a time.
-// See supabase/migrations/20260822000009_admin_usage_stats.sql.
+// The overall figures come from public.admin_usage_stats(), which is one round
+// trip and the only thing that can read auth.users.last_sign_in_at. The per-event
+// attendee count comes from public.agenda_stats, which aggregates in SQL rather
+// than being tallied a page at a time. See
+// supabase/migrations/20260822000009_admin_usage_stats.sql.
+//
+// That function and view compute more than is returned here. The extra numbers are
+// cheap counts in the same round trip and are simply not read — trimming them
+// would mean another migration, and this file is the contract.
 //
 // Admins are excluded from every count: event staff scheduling sessions on their
 // own account would inflate the attendee numbers.
-import { fail, integer, ok } from "../_shared/http.ts";
-import { fetchPage, likeTerm, pageMeta, readPage } from "../_shared/pagination.ts";
-import { isQuestSection, questSection } from "../_shared/quests.ts";
+import { fail, ok } from "../_shared/http.ts";
+import { fetchPage, type Page, pageMeta, readPage } from "../_shared/pagination.ts";
 import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
 
-const DEFAULT_WINDOW_HOURS = 24;
-const MAX_WINDOW_HOURS = 24 * 90;
+// Only the columns the four requested fields need.
+const EVENT_SELECT =
+  "id, name, description, day, start_time, end_time, event_day_config_id, sort_order, scheduled_count";
 
-const ALL = "all";
-
-// Plain columns. public.agenda_stats is a view, so there is nothing to embed and
-// nothing to disambiguate — the config names are resolved from a lookup map, the
-// same approach user/agenda.ts uses.
-const EVENT_SELECT = `
-  id, name, description, day, start_time, end_time,
-  location, speaker_name, speaker_title, speaker_company,
-  xp_value, is_sponsored, is_invite_only, capacity, sort_order, status,
-  event_quest_config_id, event_day_config_id, stage_config_id,
-  scheduled_count, saved_count, approved_count,
-  interested_count, rejected_count,
-  checkin_count, checkin_xp,
-  attendance_rate, capacity_used_percent
-`;
-
-/**
- * How the event list is ordered.
- *
- * `schedule` is chronological, which is what an organiser walking the day wants.
- * The rest are "what is working": most subscribed, best attended, biggest payout.
- */
-const SORTS: Record<string, { column: string; ascending: boolean }[]> = {
-  schedule: [
-    { column: "day", ascending: true },
-    { column: "start_time", ascending: true },
-    { column: "sort_order", ascending: true },
-  ],
-  attendees: [
-    { column: "scheduled_count", ascending: false },
-    { column: "checkin_count", ascending: false },
-  ],
-  checkins: [
-    { column: "checkin_count", ascending: false },
-    { column: "scheduled_count", ascending: false },
-  ],
-  interest: [{ column: "interested_count", ascending: false }],
-  xp: [{ column: "xp_value", ascending: false }],
-  name: [{ column: "name", ascending: true }],
-};
-
-type Named = { id: number; name: string };
-
-/** GET admin/stats — `?include=` narrows what is computed. */
+/** GET admin/stats?page=&per_page= */
 export async function getStats(url: URL): Promise<Response> {
-  const params = url.searchParams;
+  const page = readPage(url.searchParams);
+  if ("error" in page) return fail(page.error, 400);
 
-  const include = params.get("include")?.trim().toLowerCase() || "all";
-  if (!["all", "overview", "events"].includes(include)) {
-    return fail('"include" must be "all", "overview" or "events".', 400);
-  }
-  const wantsOverview = include === "all" || include === "overview";
-  const wantsEvents = include === "all" || include === "events";
+  const [overview, events] = await Promise.all([
+    loadOverview(),
+    loadEvents(page),
+  ]);
 
-  const hoursRaw = params.get("hours")?.trim() ?? "";
-  let hours = DEFAULT_WINDOW_HOURS;
-  if (hoursRaw) {
-    const parsed = integer(hoursRaw);
-    if (parsed === null || parsed < 1 || parsed > MAX_WINDOW_HOURS) {
-      return fail(`"hours" must be a whole number between 1 and ${MAX_WINDOW_HOURS}.`, 400);
-    }
-    hours = parsed;
-  }
+  if ("error" in overview) return overview.error;
+  if ("error" in events) return events.error;
 
-  const data: Record<string, unknown> = {};
-
-  if (wantsOverview) {
-    const overview = await loadOverview(hours);
-    if ("error" in overview) return overview.error;
-    data.overview = overview.value;
-  }
-
-  if (wantsEvents) {
-    const events = await loadEvents(url);
-    if ("error" in events) return events.error;
-    Object.assign(data, events.value);
-  }
-
-  return ok("Usage statistics loaded.", data);
+  return ok("Usage statistics loaded.", {
+    overview: overview.value,
+    events: events.value.events,
+    pagination: events.value.pagination,
+  });
 }
 
-async function loadOverview(
-  hours: number,
-): Promise<{ value: Record<string, unknown> } | { error: Response }> {
+async function loadOverview(): Promise<
+  { value: Record<string, unknown> } | { error: Response }
+> {
+  // 24 hours is the window the screen asks for, so it is not a parameter.
   const { data, error } = await serviceClient().rpc("admin_usage_stats", {
-    p_hours: hours,
+    p_hours: 24,
   });
 
   if (error) {
@@ -119,184 +62,69 @@ async function loadOverview(
 
   const raw = (data ?? {}) as Record<string, unknown>;
 
-  /*
-   * count() and sum() are bigints, so PostgREST hands them back as strings.
-   * Numbers are cast here rather than left for the dashboard to remember.
-   *
-   * signed_in_recently is the exception: null means the auth.users read was not
-   * permitted, and it stays null so the UI can say "unavailable" instead of
-   * rendering a confident zero.
-   */
-  const count = (key: string): number => Number(raw[key] ?? 0);
-
   return {
     value: {
-      window_hours: Number(raw.window_hours ?? hours),
-      since: raw.since ?? null,
+      /*
+       * Signed in within the last 24 hours, from auth.users.last_sign_in_at.
+       *
+       * null is a real answer and means the auth.users read was not permitted —
+       * show "unavailable" rather than 0, which would be a lie. Everything else
+       * on this screen still works in that case.
+       */
+      people_logged_in_last_24_hours: raw.signed_in_recently == null
+        ? null
+        : Number(raw.signed_in_recently),
 
-      people: {
-        total_attendees: count("total_attendees"),
-        // null = could not be read. See the note above.
-        signed_in_recently: raw.signed_in_recently == null
-          ? null
-          : Number(raw.signed_in_recently),
-        registered_recently: count("registered_recently"),
-        with_a_schedule: count("attendees_with_a_schedule"),
-        with_xp: count("attendees_with_xp"),
-      },
+      // Sessions on attendees' schedules right now. Not sessions ever added:
+      // removing an event takes its XP back, so a historic count would disagree
+      // with the XP figure on the same screen.
+      total_sessions_added: Number(raw.total_sessions_added ?? 0),
 
-      schedules: {
-        total_sessions_added: count("total_sessions_added"),
-        pending_interest: count("pending_interest"),
-      },
-
-      xp: {
-        total_earned: count("total_xp_earned"),
-        top_score: count("top_xp"),
-        // Averaged over attendees who have scored, not over everyone — dividing
-        // by the whole roll would report the size of the guest list, not how the
-        // players are doing.
-        average_per_scoring_attendee: Number(raw.average_xp_per_scoring_attendee ?? 0),
-      },
-
-      engagement: {
-        missions_completed: count("missions_completed"),
-        mission_completions_logged: count("mission_completions_logged"),
-        connections_made: count("connections_made"),
-        qr_scans: count("qr_scans"),
-        session_checkins: count("session_checkins"),
-      },
-
-      content: {
-        total_events: count("total_events"),
-        events_with_attendees: count("events_with_attendees"),
-        active_qr_codes: count("active_qr_codes"),
-      },
+      // The same number the leaderboard shows — mission XP plus session
+      // check-in XP, admins excluded.
+      total_xp_earned: Number(raw.total_xp_earned ?? 0),
     },
   };
 }
 
 async function loadEvents(
-  url: URL,
-): Promise<{ value: Record<string, unknown> } | { error: Response }> {
-  const params = url.searchParams;
-
-  const page = readPage(params);
-  if ("error" in page) return { error: fail(page.error, 400) };
-
-  const sortKey = params.get("sort")?.trim().toLowerCase() || "schedule";
-  const sort = SORTS[sortKey];
-  if (!sort) {
-    return {
-      error: fail(
-        `"sort" must be one of ${Object.keys(SORTS).join(", ")}.`,
-        400,
-      ),
-    };
-  }
-
-  const search = params.get("search")?.trim() || null;
-
-  // A date or a configs.id of type event-day, the same as GET user/agenda.
-  const dayRaw = params.get("day")?.trim() ?? "";
-  let date: string | null = null;
-  let dayConfigId: number | null = null;
-  if (dayRaw && dayRaw.toLowerCase() !== ALL) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dayRaw)) {
-      date = dayRaw;
-    } else {
-      const parsed = integer(dayRaw);
-      if (parsed === null) {
-        return {
-          error: fail(
-            'day must be a date (YYYY-MM-DD), a configs.id of type event-day, or "all".',
-            400,
-          ),
-        };
-      }
-      dayConfigId = parsed;
-    }
-  }
-
+  page: Page,
+): Promise<
+  { value: { events: unknown[]; pagination: unknown } } | { error: Response }
+> {
   const service = serviceClient();
 
   /*
-   * The whole configs table — a dozen-odd rows — so quest / day / stage names can
-   * be attached without an embed, and so a `?quest=main` filter can be resolved to
-   * the ids whose name starts that way. Fetched before the page because the quest
-   * filter has to go into the query.
+   * The event-day names ("Day 1"), so `day` can be the label and `date` the
+   * calendar date. Three-odd rows, fetched as a flat list and joined in memory —
+   * public.agenda has several foreign keys to public.configs, so an embed there
+   * needs a constraint hint and is not worth the fragility.
    */
-  const { data: configRows, error: configError } = await service
+  const { data: dayRows, error: dayError } = await service
     .from("configs")
-    .select("id, name, type");
-  if (configError) {
-    logDbFailure("admin stats configs", configError);
+    .select("id, name")
+    .eq("type", "event-day");
+  if (dayError) {
+    logDbFailure("admin stats event days", dayError);
     return { error: fail("Something went wrong. Please try again.", 500) };
   }
 
-  const configs = new Map<number, Named>();
-  for (const row of configRows ?? []) {
-    configs.set(row.id as number, { id: row.id as number, name: row.name as string });
+  const dayNames = new Map<number, string>();
+  for (const row of dayRows ?? []) {
+    dayNames.set(row.id as number, row.name as string);
   }
 
-  let questIds: number[] | null = null;
-  const questRaw = params.get("quest")?.trim().toLowerCase() ?? "";
-  if (questRaw && questRaw !== ALL) {
-    if (isQuestSection(questRaw)) {
-      const matched: number[] = (configRows ?? [])
-        .filter((row: { type: unknown; name: unknown }) =>
-          row.type === "event-quest" && questSection(row.name) === questRaw
-        )
-        .map((row: { id: number }) => row.id);
-      // No config row for that section, so no event can be in it.
-      if (matched.length === 0) {
-        return {
-          value: { events: [], sort: sortKey, search, pagination: pageMeta(0, page) },
-        };
-      }
-      questIds = matched;
-    } else {
-      const parsed = integer(questRaw);
-      if (parsed === null) {
-        return {
-          error: fail(
-            '"quest" must be "main", "side", "bonus", a configs.id of type event-quest, or "all".',
-            400,
-          ),
-        };
-      }
-      questIds = [parsed];
-    }
-  }
-
-  const build = (headOnly: boolean) => {
-    let query = service
+  const build = (headOnly: boolean) =>
+    service
       .from("agenda_stats")
-      .select(EVENT_SELECT, { count: "exact", head: headOnly });
-
-    for (const key of sort) {
-      query = query.order(key.column, {
-        ascending: key.ascending,
-        // Events with no date or no count sort last either way, rather than
-        // heading the list on a descending sort.
-        nullsFirst: false,
-      });
-    }
-    // A total order, so paging cannot repeat or skip a row when several events
-    // share the sort value.
-    query = query.order("id");
-
-    if (date) query = query.eq("day", date);
-    if (dayConfigId !== null) query = query.eq("event_day_config_id", dayConfigId);
-    if (questIds) query = query.in("event_quest_config_id", questIds);
-    if (search) {
-      const term = likeTerm(search);
-      query = query.or(
-        `name.ilike.${term},speaker_name.ilike.${term},speaker_company.ilike.${term},location.ilike.${term}`,
-      );
-    }
-    return query;
-  };
+      .select(EVENT_SELECT, { count: "exact", head: headOnly })
+      // Chronological. Events with no date sort last rather than heading the list.
+      .order("day", { nullsFirst: false })
+      .order("start_time", { nullsFirst: false })
+      .order("sort_order")
+      // A total order, so paging cannot repeat or skip a row when several events
+      // share a start time.
+      .order("id");
 
   const result = await fetchPage(build, page);
   if ("error" in result) {
@@ -304,45 +132,22 @@ async function loadEvents(
     return { error: fail("Something went wrong. Please try again.", 500) };
   }
 
-  const pick = (id: unknown): Named | null =>
-    typeof id === "number" ? configs.get(id) ?? null : null;
-
   const events = result.rows.map((row) => {
-    const quest = pick(row.event_quest_config_id);
+    const configId = row.event_day_config_id;
     return {
-      ...row,
-      // Named as the user-facing agenda names them, so an admin screen can reuse
-      // the same row component.
-      quest,
-      quest_section: questSection(quest?.name),
-      event_day: pick(row.event_day_config_id),
-      stage: pick(row.stage_config_id),
-      // The FRD's "total attendees" for the event, under a plainer name than the
-      // view's column.
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      // The label ("Day 1"), null if the event has no day config set.
+      day: typeof configId === "number" ? dayNames.get(configId) ?? null : null,
+      // The calendar date, kept apart from the label above.
+      date: row.day ?? null,
+      start_time: row.start_time ?? null,
+      end_time: row.end_time ?? null,
+      // How many attendees have this on their schedule.
       total_attendees: Number(row.scheduled_count ?? 0),
-      scheduled_count: Number(row.scheduled_count ?? 0),
-      saved_count: Number(row.saved_count ?? 0),
-      approved_count: Number(row.approved_count ?? 0),
-      interested_count: Number(row.interested_count ?? 0),
-      rejected_count: Number(row.rejected_count ?? 0),
-      checkin_count: Number(row.checkin_count ?? 0),
-      checkin_xp: Number(row.checkin_xp ?? 0),
-      // null when nobody scheduled it — "nothing to measure", not "0% turned up".
-      attendance_rate: row.attendance_rate == null
-        ? null
-        : Number(row.attendance_rate),
-      capacity_used_percent: row.capacity_used_percent == null
-        ? null
-        : Number(row.capacity_used_percent),
     };
   });
 
-  return {
-    value: {
-      events,
-      sort: sortKey,
-      search,
-      pagination: pageMeta(result.total, page),
-    },
-  };
+  return { value: { events, pagination: pageMeta(result.total, page) } };
 }
