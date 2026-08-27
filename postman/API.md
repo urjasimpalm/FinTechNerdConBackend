@@ -1818,6 +1818,110 @@ The message is `Announcement cleared.` when the resulting text is empty, and
 `Map updated.` when only `map_image` was sent. `updated_by` is set to the admin who
 saved it; `updated_at` is maintained by a trigger.
 
+### 11.6 `GET admin/stats` — Usage Statistics
+
+The Admin UI sheet's Usage Statistics screen in one call: the overall figures plus
+the per-event list.
+
+| Parameter | Meaning |
+| --- | --- |
+| `include` | `all` (default), `overview`, or `events`. Use `events` when turning a page so the overall figures aren't recomputed |
+| `hours` | Window for the "recently" figures. Default **24**, max 2160 (90 days) |
+| `page`, `per_page` | Events paging — see [§3.1](#31-pagination). Default 20 per page, max 100 |
+| `sort` | `schedule` (default, chronological), `attendees`, `checkins`, `interest`, `xp`, `name` |
+| `day` | A date (`YYYY-MM-DD`), a `configs.id` of type `event-day`, or `all` |
+| `quest` | `main`, `side`, `bonus`, a `configs.id` of type `event-quest`, or `all` |
+| `search` | Matches event name, speaker name, speaker company or location |
+
+```json
+{
+  "status": "Success",
+  "message": "Usage statistics loaded.",
+  "data": {
+    "overview": {
+      "window_hours": 24,
+      "since": "2026-08-21T02:00:00+00:00",
+      "people": {
+        "total_attendees": 412,
+        "signed_in_recently": 168,
+        "registered_recently": 23,
+        "with_a_schedule": 297,
+        "with_xp": 254
+      },
+      "schedules": { "total_sessions_added": 1043, "pending_interest": 12 },
+      "xp": { "total_earned": 38150, "top_score": 450, "average_per_scoring_attendee": 150.2 },
+      "engagement": {
+        "missions_completed": 611,
+        "mission_completions_logged": 1580,
+        "connections_made": 204,
+        "qr_scans": 733,
+        "session_checkins": 486
+      },
+      "content": { "total_events": 42, "events_with_attendees": 38, "active_qr_codes": 21 }
+    },
+    "events": [
+      {
+        "id": "3f9a…",
+        "name": "Stablecoins in 2027",
+        "description": "…",
+        "day": "2026-09-01",
+        "start_time": "2026-09-01T15:00:00Z",
+        "end_time": "2026-09-01T15:45:00Z",
+        "location": "Main Hall",
+        "speaker_name": "Joy Adams",
+        "xp_value": 25,
+        "is_sponsored": false,
+        "is_invite_only": false,
+        "capacity": null,
+        "quest": { "id": 4, "name": "Main Quests" },
+        "quest_section": "main",
+        "event_day": { "id": 9, "name": "Day 1" },
+        "stage": { "id": 11, "name": "Stage 1" },
+        "total_attendees": 87,
+        "scheduled_count": 87,
+        "saved_count": 87,
+        "approved_count": 0,
+        "interested_count": 0,
+        "rejected_count": 0,
+        "checkin_count": 61,
+        "checkin_xp": 1525,
+        "attendance_rate": 70.1,
+        "capacity_used_percent": null
+      }
+    ],
+    "sort": "schedule",
+    "search": null,
+    "pagination": { "total": 42, "page": 1, "per_page": 20, "total_pages": 3, "has_next": true, "has_prev": false }
+  }
+}
+```
+
+**The three headline figures** the sheet names, and exactly what each counts:
+
+| Field | Definition |
+| --- | --- |
+| `people.signed_in_recently` | Attendees whose `auth.users.last_sign_in_at` falls inside the window. This is *signed in*, not *active* — someone who signed in three days ago and is still using the app on a refreshed token is not counted, because nothing records activity. **Can be `null`**, meaning the `auth.users` read was not permitted; render "unavailable", not 0 |
+| `schedules.total_sessions_added` | Rows **currently** on a schedule (`saved` + `approved`), not rows ever added. Removing an event takes its XP back ([§6.5](#65-how-xp-is-earned)), so counting historic adds would disagree with the XP total |
+| `xp.total_earned` | Summed from `public.leaderboard`, so it is the same number the leaderboard screen shows — mission XP plus session check-in XP, admins excluded |
+
+**Per-event fields** beyond the ones the sheet asks for:
+
+- `total_attendees` / `scheduled_count` — the same number, "how many people have
+  added this event to their schedule". `saved_count` + `approved_count` splits it.
+- `interested_count` — for invite-only events, requests waiting on an admin.
+- `checkin_count` / `checkin_xp` — who actually turned up (scanned the session's
+  QR) and the XP that paid out. Scheduled ≠ attended.
+- `attendance_rate` — check-ins as a percentage of the people who scheduled it.
+  **`null` when nobody scheduled it** — "nothing to measure", not "0% turned up".
+- `capacity_used_percent` — `null` unless the event sets a `capacity`.
+
+Admins are excluded from every count on this screen: staff scheduling sessions on
+their own account would inflate the attendee numbers.
+
+Sorting by `attendees` or `checkins` orders across the **whole** agenda, not just
+the current page — the counts are aggregated in `public.agenda_stats` rather than
+tallied per page.
+
 ### Errors (all routes)
 
 | Status | Body |
@@ -1876,9 +1980,9 @@ These have no endpoint. The ones marked *SDK* need no backend work — call
 | Profile image upload | Built — `PUT user/profile` uploads to the `profile-images` bucket, see [§4.2](#42-put-userprofile--update-my-profile) |
 | Sending push notifications | Rows can be inserted into `notifications` server-side, but nothing delivers to FCM/APNs yet |
 | Sponsor management | Reading is built — `GET config/sponsors`, see [§5](#5-config--reference-data). *Writing* has no route: rows are added in Studio or by the service role |
-| Admin: agenda, missions, QR codes, leaderboard | **Deliberately not built** — the user side is done ([§6](#6-home-missions-qr-codes-and-the-leaderboard), [§7](#7-agenda)); authoring events, missions and QR codes is done in Studio or by the service role for now. `public.mint_qr_codes()` mints a batch of codes to print — see below |
+| Admin: agenda, missions, QR codes, leaderboard (**writing**) | **Deliberately not built** — the user side is done ([§6](#6-home-missions-qr-codes-and-the-leaderboard), [§7](#7-agenda)) and admins can *read* per-event statistics via [§11.6](#116-get-adminstats--usage-statistics); authoring events, missions and QR codes is done in Studio or by the service role for now. `public.mint_qr_codes()` mints a batch of codes to print — see below |
 | Admin: approve invite-only requests | Not built. Attendees can already express interest ([§7.4](#74-post-useragendaschedule--add-remove-or-ask)); approving means setting `public.user_agenda.status` to `approved` or `rejected`, which awards the mission XP through the same trigger. Until there is a route, an admin does it in Studio |
-| Admin: usage statistics | Not built. The numbers the FRD asks for are all derivable — sessions added (`user_agenda`), total XP (`leaderboard`), per-event interest (`user_agenda` grouped by `agenda_id`) |
+| Admin: usage statistics | Built — `GET admin/stats`, see [§11.6](#116-get-adminstats--usage-statistics) |
 | Admin: mark an attendee as having shown up | Not built. `public.agenda_checkins` is the table it would write, and scanning the session's QR code already does it for the attendee |
 
 ### Minting QR codes to print

@@ -2936,6 +2936,153 @@
               }
             }
           ]
+        },
+        {
+          "name": "Usage statistics (overview + events)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/stats?include=all&hours=24&page=1&per_page=20&sort=schedule",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "stats"
+              ],
+              "query": [
+                {
+                  "key": "include",
+                  "value": "all"
+                },
+                {
+                  "key": "hours",
+                  "value": "24"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                },
+                {
+                  "key": "sort",
+                  "value": "schedule"
+                }
+              ]
+            },
+            "description": "The Admin UI's Usage Statistics screen in one call.\n\n**The three headline figures:**\n- `overview.people.signed_in_recently` \u2014 attendees who signed in inside the `hours` window (default 24), read from `auth.users.last_sign_in_at`. This is *signed in*, not *active*: someone who signed in three days ago and is still using the app on a refreshed token is not counted. **Can be `null`** \u2014 that means the auth read was not permitted, so render \"unavailable\" rather than 0.\n- `overview.schedules.total_sessions_added` \u2014 rows **currently** on a schedule, not rows ever added. Unsaving takes the XP back, so counting historic adds would disagree with the XP total.\n- `overview.xp.total_earned` \u2014 summed from `public.leaderboard`, so it is the same number the leaderboard screen shows.\n\n**Per event:** `total_attendees` (how many added it to their schedule), plus `interested_count` for invite-only events awaiting approval, `checkin_count` / `checkin_xp` for who actually turned up, and `attendance_rate` \u2014 which is `null` when nobody scheduled it (\"nothing to measure\", not \"0% turned up\").\n\n`sort`: `schedule` (chronological), `attendees`, `checkins`, `interest`, `xp`, `name`. Sorting by count orders across the **whole** agenda, not just the current page.\n\nRequires an admin token \u2014 a non-admin gets 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('overview and events', () => {",
+                  "  pm.expect(body.data.overview).to.have.property('people');",
+                  "  pm.expect(body.data.events).to.be.an('array');",
+                  "  pm.expect(body.data.pagination).to.have.property('total');",
+                  "});",
+                  "const o = body.data.overview;",
+                  "pm.test('the three headline figures are present', () => {",
+                  "  pm.expect(o.people).to.have.property('signed_in_recently');",
+                  "  pm.expect(o.schedules.total_sessions_added).to.be.a('number');",
+                  "  pm.expect(o.xp.total_earned).to.be.a('number');",
+                  "});",
+                  "// null is a real answer here and means 'could not read auth.users'.",
+                  "if (o.people.signed_in_recently === null) {",
+                  "  console.log('signed_in_recently unavailable \u2014 check the grant on auth.users');",
+                  "} else {",
+                  "  console.log('signed in last', o.window_hours + 'h:', o.people.signed_in_recently,",
+                  "    '| sessions added:', o.schedules.total_sessions_added,",
+                  "    '| total XP:', o.xp.total_earned);",
+                  "}",
+                  "pm.test('attendance_rate is null, never 0, when unscheduled', () => {",
+                  "  body.data.events.filter(e => e.scheduled_count === 0)",
+                  "    .forEach(e => pm.expect(e.attendance_rate).to.be.null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Events by popularity (page 2, no overview)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/stats?include=events&sort=attendees&page=1&per_page=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "stats"
+              ],
+              "query": [
+                {
+                  "key": "include",
+                  "value": "events"
+                },
+                {
+                  "key": "sort",
+                  "value": "attendees"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "`include=events` skips the overall figures, which is what a page turn should do \u2014 otherwise every page recomputes the whole dashboard.\n\n`sort=attendees` orders by how many people scheduled each event, across the whole agenda.\n\nAlso accepts `day` (a date or an `event-day` configs.id), `quest` (`main`/`side`/`bonus`) and `search` (name, speaker, company, location)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('events only \u2014 no overview recomputed', () => {",
+                  "  pm.expect(body.data.events).to.be.an('array');",
+                  "  pm.expect(body.data).to.not.have.property('overview');",
+                  "});",
+                  "pm.test('ordered by attendees, descending', () => {",
+                  "  const counts = body.data.events.map(e => e.total_attendees);",
+                  "  pm.expect(counts).to.eql(counts.slice().sort((a, b) => b - a));",
+                  "});",
+                  "(body.data.events || []).slice(0, 5).forEach(e =>",
+                  "  console.log(e.total_attendees + ' scheduled \u00b7', e.checkin_count + ' attended \u00b7', e.name));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },

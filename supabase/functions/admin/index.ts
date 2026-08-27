@@ -1,8 +1,11 @@
 // Admin routes. One function, routed on the path after its name:
 //
-//   GET    /functions/v1/admin/user/list     ?limit=&offset=&search=
-//   POST   /functions/v1/admin/user/add      { "emails": ["a@b.com", ...] }
-//   DELETE /functions/v1/admin/user/remove   { "emails": ["a@b.com", ...] }
+//   GET    /functions/v1/admin/user/list          ?limit=&offset=&search=
+//   POST   /functions/v1/admin/user/add           { "emails": ["a@b.com", ...] }
+//   DELETE /functions/v1/admin/user/remove        { "emails": ["a@b.com", ...] }
+//   GET    /functions/v1/admin/announcement/get
+//   POST   /functions/v1/admin/announcement/post  { "text": "...", "map_image": "..." }
+//   GET    /functions/v1/admin/stats              usage statistics + per-event list
 //
 // These manage public.email_stack — the attendee list that registration is gated
 // on. Entries here are invitations, not accounts: adding one lets that address
@@ -19,6 +22,7 @@ import { requireAdmin } from "../_shared/admin.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { fail, integer, ok, readJson, text } from "../_shared/http.ts";
 import { serviceClient } from "../_shared/supabase.ts";
+import { getStats } from "./stats.ts";
 
 const MAX_EMAILS = 200;
 const DEFAULT_PER_PAGE = 50;
@@ -31,6 +35,7 @@ const ROUTES: Record<string, string> = {
   "user/remove": "DELETE",
   "announcement/get": "GET",
   "announcement/post": "POST",
+  "stats": "GET",
 };
 
 // The announcement is a single row pinned to this id.
@@ -364,6 +369,7 @@ Deno.serve(async (req) => {
     // Read-only routes first: they take no body.
     if (route === "user/list") return await listUsers(url);
     if (route === "announcement/get") return await getAnnouncement();
+    if (route === "stats") return await getStats(url);
 
     const body = await readJson(req);
     if (!body) return fail("A JSON body is required.", 400);
