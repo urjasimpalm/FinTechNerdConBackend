@@ -152,6 +152,12 @@
       "value": "",
       "description": "Captured by 'Add a session' so 'Remove a session' can assert the XP dropped.",
       "type": "string"
+    },
+    {
+      "key": "created_agenda_id",
+      "value": "",
+      "description": "Set by 'Create an agenda event (admin)' in the Z folder, and read by the update request next to it.",
+      "type": "string"
     }
   ],
   "item": [
@@ -3065,8 +3071,134 @@
     },
     {
       "name": "Z. Not used by the app (direct REST)",
-      "description": "Kept for debugging and for anyone poking at the tables directly. The app should call the edge functions instead:\n\n- guilds / configs \u2192 **2. Config** (`GET config`)\n- chat create / participants / messages \u2192 **7. Chat** (`chat/create`, `chat/list`, `chat/details/{id}`, `chat/send/{id}`)\n\nThese still work \u2014 the RLS policies allow them \u2014 but the function routes do the multi-step writes in one transaction and return the shapes the screens need. See postman/API.md \u00a78.6.",
+      "description": "Kept for debugging, for anyone poking at the tables directly, and for the admin-side writes no screen makes.\n\n**admin/agenda/create** and **admin/agenda/update** are the two below: they author the schedule the Agenda screen reads, so they are admin tooling rather than app endpoints. See postman/API.md \u00a711.7.\n\nThe rest are direct REST reads the app should call an edge function for instead:\n\n- guilds / configs \u2192 **2. Config** (`GET config`)\n- chat create / participants / messages \u2192 **7. Chat** (`chat/create`, `chat/list`, `chat/details/{id}`, `chat/send/{id}`)\n\nThese still work \u2014 the RLS policies allow them \u2014 but the function routes do the multi-step writes in one transaction and return the shapes the screens need. See postman/API.md \u00a78.6.",
       "item": [
+        {
+          "name": "Create an agenda event (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/agenda/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "agenda",
+                "create"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman: Stablecoin Rails, End to End\",\n  \"description\": \"Added from Postman. Admin tooling, not something the app does.\",\n  \"day\": \"2026-09-15\",\n  \"start_time\": \"2026-09-15T15:00:00Z\",\n  \"end_time\": \"2026-09-15T16:00:00Z\",\n  \"speaker_name\": \"Ada Lovelace\",\n  \"speaker_title\": \"Head of Payments\",\n  \"speaker_company\": \"Analytical Engines\",\n  \"location\": \"Main Hall\",\n  \"event_quest_config_id\": 4,\n  \"event_day_config_id\": 9,\n  \"stage_config_id\": 11,\n  \"xp_value\": 50,\n  \"capacity\": 200,\n  \"is_sponsored\": false,\n  \"is_invite_only\": false,\n  \"sort_order\": 10,\n  \"status\": \"scheduled\",\n  \"primary_tag\": 4,\n  \"tags\": [\n    3\n  ],\n  \"user_types\": [\n    1,\n    2\n  ]\n}"
+            },
+            "description": "Creates one agenda event, its tags and its Builder/Operator/Explorer audiences \u2014 three tables in one call. **Admin only**: run **1. Auth \u2192 Login** with a user whose `public.users.is_admin` is true first.\n\nOnly `name` is required; the agenda is authored in passes, so an event with nothing but a name is a legitimate draft.\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| name | string | **Required.** Up to 200 characters |\n| description | string | Up to 650 characters (the FRD's limit) |\n| day | date | `YYYY-MM-DD` |\n| start_time / end_time | timestamp | ISO 8601 **with a zone** \u2014 `2026-09-15T15:00:00Z` or `...-05:00`. `end_time` must be after `start_time` |\n| speaker_name / speaker_title / speaker_company | string | \u2014 |\n| location | string | Free text, e.g. `Main Hall` |\n| event_quest_config_id | integer | `configs` row of type `event-quest` \u2014 Main Quests, Side Quests, Bonus Quests. Short alias: `quest` |\n| event_day_config_id | integer | `configs` row of type `event-day` \u2014 Day 0, Day 1, Day 2. Short alias: `event_day` |\n| stage_config_id | integer | `configs` row of type `stage-type` \u2014 Stage 1\u20134. Short alias: `stage` |\n| xp_value | integer | XP for checking in with the session's QR code. Default 0 |\n| capacity | integer | 1 or more, or null for no limit |\n| is_sponsored | boolean | Default false |\n| is_invite_only | boolean | Default false \u2014 the app then shows \"express interest\" instead of add-to-schedule |\n| sort_order | integer | Breaks ties between events starting at the same moment. Default 0 |\n| status | string | Default `scheduled` |\n| tags | array | Up to 2 `guilds` ids. Items may also be `{ \"guild_id\": 3, \"is_primary\": true }` |\n| primary_tag | integer | The primary tag's `guilds` id. With a single tag and no flag, that tag is the primary one |\n| user_types | array | `configs` ids of type `user_type` \u2014 1 Builder, 2 Operator, 3 Explorer |\n\n**The ids below are the locally seeded ones.** `public.configs` runs on one shared id sequence, so they differ between local and a hosted project \u2014 read the real ones from **2. Config \u2192 All config** (`GET config`, grouped by `type`) and the guild ids from `GET config` / **Guilds with is_joined**. A wrong id is a 400 that names the mismatch, never a silently wrong row.\n\nLocally seeded: `user_type` 1 Builder, 2 Operator, 3 Explorer \u00b7 `event-quest` 4 Main Quests, 5 Side Quests, 6 Bonus Quests \u00b7 `event-day` 8 Day 0, 9 Day 1, 10 Day 2 \u00b7 `stage-type` 11\u201314 Stage 1\u20134 \u00b7 guilds 1 AI & Agentic Systems, 3 Payments, 4 Digital Currency & Stablecoins.\n\nA name is accepted anywhere an id is (`\"stage_config_id\": \"Stage 1\"`, `\"tags\": [\"Payments\"]`), which is handy when typing a request by hand.\n\n- **200** `data` is the created event with `quest`, `event_day`, `stage`, `tags`, `primary_tag` and `user_types` resolved to `{ id, name }`\n- **400** a validation failure, naming the field. If the tags or audiences cannot be written the event row is deleted again rather than left half-created\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  const sent = JSON.parse(pm.request.body.raw);",
+                  "  pm.test('created, with its lookups resolved', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.id).to.be.a('string');",
+                  "    pm.expect(body.data.name).to.eql(sent.name);",
+                  "    // Sent as ids; echoed back as { id, name } so the caller can see what each matched.",
+                  "    pm.expect(body.data.event_quest_config_id).to.eql(sent.event_quest_config_id);",
+                  "    pm.expect(body.data.quest.id).to.eql(sent.event_quest_config_id);",
+                  "    pm.expect(body.data.event_day.id).to.eql(sent.event_day_config_id);",
+                  "    pm.expect(body.data.stage.id).to.eql(sent.stage_config_id);",
+                  "    pm.expect(body.data.tags.map((t) => t.id)).to.have.members([sent.primary_tag, ...sent.tags]);",
+                  "    pm.expect(body.data.primary_tag.id, 'the primary tag').to.eql(sent.primary_tag);",
+                  "    pm.expect(body.data.user_types.map((u) => u.id)).to.have.members(sent.user_types);",
+                  "  });",
+                  "  // Feeds 'Update an agenda event' below. Kept separate from {{agenda_id}} so",
+                  "  // the read-only Agenda flow in folder 6 is not pointed at this test event.",
+                  "  pm.collectionVariables.set('created_agenda_id', body.data.id);",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true, and check the config/guild ids against GET config for this project.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update an agenda event (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/agenda/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "agenda",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{created_agenda_id}}\",\n  \"name\": \"Postman: Stablecoin Rails, End to End (edited)\",\n  \"description\": \"Edited from Postman. Every field on this route is editable.\",\n  \"day\": \"2026-09-16\",\n  \"start_time\": \"2026-09-16T16:30:00Z\",\n  \"end_time\": \"2026-09-16T17:15:00Z\",\n  \"speaker_name\": \"Grace Hopper\",\n  \"speaker_title\": \"Chief Engineer\",\n  \"speaker_company\": \"Compiler Works\",\n  \"location\": \"Stage 2, Activation Hall\",\n  \"event_quest_config_id\": 5,\n  \"event_day_config_id\": 10,\n  \"stage_config_id\": 12,\n  \"xp_value\": 75,\n  \"capacity\": 150,\n  \"is_sponsored\": true,\n  \"is_invite_only\": true,\n  \"sort_order\": 20,\n  \"status\": \"scheduled\",\n  \"primary_tag\": 1,\n  \"tags\": [\n    3\n  ],\n  \"user_types\": [\n    1,\n    3\n  ]\n}"
+            },
+            "description": "Edits an existing event. **Admin only.** Takes the id from **Create an agenda event** above (`{{created_agenda_id}}`).\n\n**Every field is editable** \u2014 the body below sends all of them, so delete the lines that should stay as they are. It is a patch: only the keys present are written, absent keys are left alone, and an explicit `null` clears an optional field. Same field table and same ids as create.\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| id | uuid | **Required.** The event to edit (`agenda_id` is accepted too) |\n| \u2026any create field | \u2014 | `name`, `description`, `day`, `start_time`, `end_time`, `speaker_name`, `speaker_title`, `speaker_company`, `location`, `event_quest_config_id`, `event_day_config_id`, `stage_config_id`, `xp_value`, `capacity`, `is_sponsored`, `is_invite_only`, `sort_order`, `status`. Absent keys are left alone; `null` clears one |\n| tags / primary_tag | array / integer | **Replaces** the event's tags. Send `\"tags\": []` to remove them |\n| user_types | array | **Replaces** the event's audiences |\n\n`end_time` is checked against the stored `start_time`, so moving only one end of a session still has to make sense. Sending nothing but `id` is a 400 rather than a no-op.\n\n**The ids below are the locally seeded ones.** `public.configs` runs on one shared id sequence, so they differ between local and a hosted project \u2014 read the real ones from **2. Config \u2192 All config** (`GET config`, grouped by `type`) and the guild ids from `GET config` / **Guilds with is_joined**. A wrong id is a 400 that names the mismatch, never a silently wrong row.\n\nLocally seeded: `user_type` 1 Builder, 2 Operator, 3 Explorer \u00b7 `event-quest` 4 Main Quests, 5 Side Quests, 6 Bonus Quests \u00b7 `event-day` 8 Day 0, 9 Day 1, 10 Day 2 \u00b7 `stage-type` 11\u201314 Stage 1\u20134 \u00b7 guilds 1 AI & Agentic Systems, 3 Payments, 4 Digital Currency & Stablecoins.\n\nA name is accepted anywhere an id is (`\"stage_config_id\": \"Stage 1\"`, `\"tags\": [\"Payments\"]`), which is handy when typing a request by hand.\n\n- **200** `data` is the event as it now stands\n- **400** a validation failure, or nothing was sent to change\n- **404** no event with that id\n- **401 / 403** as above"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403, 404]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  const sent = JSON.parse(pm.request.body.raw);",
+                  "  pm.test('every field sent was written', () => {",
+                  "    for (const key of ['name', 'description', 'day', 'location', 'speaker_name', 'speaker_title', 'speaker_company', 'xp_value', 'capacity', 'is_sponsored', 'is_invite_only', 'sort_order', 'status', 'event_quest_config_id', 'event_day_config_id', 'stage_config_id']) {",
+                  "      pm.expect(body.data[key], key).to.eql(sent[key]);",
+                  "    }",
+                  "    pm.expect(body.data.tags.map((t) => t.id)).to.have.members([sent.primary_tag, ...sent.tags]);",
+                  "    pm.expect(body.data.primary_tag.id).to.eql(sent.primary_tag);",
+                  "    pm.expect(body.data.user_types.map((u) => u.id)).to.have.members(sent.user_types);",
+                  "  });",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- run Create an agenda event first, as a user with is_admin = true.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
         {
           "name": "Guilds",
           "request": {

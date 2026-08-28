@@ -6,11 +6,15 @@
 //   GET    /functions/v1/admin/announcement/get
 //   POST   /functions/v1/admin/announcement/post  { "text": "...", "map_image": "..." }
 //   GET    /functions/v1/admin/stats              usage statistics + per-event list
+//   POST   /functions/v1/admin/agenda/create      { "name": "...", ... }
+//   POST   /functions/v1/admin/agenda/update      { "id": "...", ...fields }
 //
-// These manage public.email_stack — the attendee list that registration is gated
-// on. Entries here are invitations, not accounts: adding one lets that address
-// register, removing one stops future registrations but leaves any account that
-// already registered with it untouched.
+// user/* manages public.email_stack — the attendee list that registration is
+// gated on. Entries there are invitations, not accounts: adding one lets that
+// address register, removing one stops future registrations but leaves any
+// account that already registered with it untouched.
+//
+// agenda/* authors the schedule the Agenda screen reads. See ./agenda.ts.
 //
 // Every route requires a signed-in user whose public.users row has
 // is_admin = true. The project's anon key is itself a valid JWT, so `verify_jwt`
@@ -22,6 +26,7 @@ import { requireAdmin } from "../_shared/admin.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { fail, integer, ok, readJson, text } from "../_shared/http.ts";
 import { serviceClient } from "../_shared/supabase.ts";
+import { createEvent, updateEvent } from "./agenda.ts";
 import { getStats } from "./stats.ts";
 
 const MAX_EMAILS = 200;
@@ -36,6 +41,8 @@ const ROUTES: Record<string, string> = {
   "announcement/get": "GET",
   "announcement/post": "POST",
   "stats": "GET",
+  "agenda/create": "POST",
+  "agenda/update": "POST",
 };
 
 // The announcement is a single row pinned to this id.
@@ -377,6 +384,8 @@ Deno.serve(async (req) => {
     if (route === "announcement/post") {
       return await saveAnnouncement(body, gate.caller.id);
     }
+    if (route === "agenda/create") return await createEvent(body);
+    if (route === "agenda/update") return await updateEvent(body);
 
     const parsed = readEntries(body);
     if ("error" in parsed) return fail(parsed.error, 400);

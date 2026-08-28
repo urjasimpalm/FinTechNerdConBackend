@@ -1213,6 +1213,10 @@ Five routes on the `user` function. Every event carries the caller's own state, 
 a list screen can draw the `+` / checkmark button and grey out past events without
 a second call.
 
+All five are read-only apart from the caller's own schedule. Creating and editing
+events is admin-side — see
+[§11.7](#117-post-adminagendacreate-and-post-adminagendaupdate).
+
 ### 7.1 `GET user/agenda` — the event list
 
 | Parameter | Example | Meaning |
@@ -1668,8 +1672,9 @@ supabase.channel("announcement")
 ## 11. Admin routes
 
 Admin-only routes, all on one function. `user/*` manages `public.email_stack` —
-the invite list registration is gated on — and `announcement/*` edits the banner
-from [§10](#10-announcement).
+the invite list registration is gated on — `announcement/*` edits the banner
+from [§10](#10-announcement), and `agenda/*` authors the schedule the Agenda
+screen reads ([§7](#7-agenda)).
 
 **Admin only:** the caller needs a signed-in session whose `public.users` row has
 `is_admin = true`, sent as `Authorization: Bearer <token>` like any authenticated
@@ -1682,6 +1687,9 @@ request.
 | `/functions/v1/admin/user/remove` | `DELETE` |
 | `/functions/v1/admin/announcement/get` | `GET` |
 | `/functions/v1/admin/announcement/post` | `POST` |
+| `/functions/v1/admin/stats` | `GET` |
+| `/functions/v1/admin/agenda/create` | `POST` |
+| `/functions/v1/admin/agenda/update` | `POST` |
 
 For the `user/*` routes, entries are **invitations, not accounts**: adding one
 lets that address register, removing one stops future registrations but leaves any
@@ -1883,6 +1891,163 @@ account would inflate the attendee numbers.
 
 Requires an admin token; a non-admin gets `403`.
 
+### 11.7 `POST admin/agenda/create` and `POST admin/agenda/update`
+
+Authoring events. Nothing in the app calls these — the app only ever *reads* the
+agenda — so they are back-office routes, and they live in Postman under
+**Z. Not used by the app** rather than beside the Agenda flow.
+
+One event spans three tables, and both routes write all three in one call:
+`public.agenda`, its tags in `public.agenda_guilds`, and its
+Builder/Operator/Explorer audiences in `public.agenda_user_types`.
+
+**Only `name` is required.** The agenda is authored in passes — times and stages
+get assigned after the sessions exist — so an event with nothing but a name is a
+legitimate draft.
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `name` | string | **Required on create.** Up to 200 characters |
+| `description` | string | Up to 650 characters, the FRD's limit. `null` clears it |
+| `day` | date | `YYYY-MM-DD` |
+| `start_time`, `end_time` | timestamp | ISO 8601 **with a zone** — `2026-09-15T15:00:00Z`, or an offset like `-05:00`. A bare `2026-09-15 09:00` is a 400, because it would be read in the server's zone. `end_time` must be after `start_time` |
+| `speaker_name`, `speaker_title`, `speaker_company` | string | — |
+| `location` | string | Free text, e.g. `Main Hall` |
+| `event_quest_config_id` | integer | `configs` row of type `event-quest` — `Main Quests`, `Side Quests`, `Bonus Quests`. Short alias: `quest` |
+| `event_day_config_id` | integer | `configs` row of type `event-day` — `Day 0`, `Day 1`, `Day 2`. Short alias: `event_day` |
+| `stage_config_id` | integer | `configs` row of type `stage-type` — `Stage 1`–`Stage 4`. Short alias: `stage` |
+| `xp_value` | integer | XP for checking in with the session's QR code ([§6.5](#65-how-xp-is-earned)), not for saving it. Default 0 |
+| `capacity` | integer | 1 or more, or `null` for no limit |
+| `is_sponsored` | boolean | Default `false` |
+| `is_invite_only` | boolean | Default `false`. When `true` the app offers "express interest" instead of add-to-schedule ([§7.4](#74-post-useragendaschedule--add-remove-or-ask)) |
+| `sort_order` | integer | Breaks ties between events starting at the same moment, and orders events with no time at all. Default 0 |
+| `status` | string | Default `scheduled` |
+| `tags` | array | Up to **2** `guilds` ids. Items may also be `{ "guild_id": 3, "is_primary": true }` |
+| `primary_tag` | integer | The primary tag's `guilds` id. A single tag with no flag *is* the primary one, so the common case needs no flag |
+| `user_types` | array | `configs` ids of type `user_type` — `1` Builder, `2` Operator, `3` Explorer. `audiences` is accepted as an alias |
+
+**Read the ids from [`GET config`](#5-config--reference-data) for the project you
+are writing to.** `public.configs` runs on one shared id sequence, so `Stage 1` is
+`11` on a locally seeded stack and something else on a hosted one — an id from the
+wrong project would otherwise point an event at the wrong day or stage. Ids are
+checked against their type, so `"stage_config_id": 9` (a `Day 1` row) is a 400
+naming the mismatch rather than a silently wrong row, but nothing can catch an id
+that is the right *type* and the wrong row.
+
+A **name** is accepted anywhere an id is — `"stage_config_id": "Stage 1"`,
+`"tags": ["Payments"]`, `"user_types": ["Builder"]` — which is the portable form
+when writing a request by hand, since names are the same in every environment.
+
+```ts
+const { data } = await supabase.functions.invoke("admin/agenda/create", {
+  body: {
+    name: "Stablecoin Rails, End to End",
+    day: "2026-09-15",
+    start_time: "2026-09-15T15:00:00Z",
+    end_time: "2026-09-15T16:00:00Z",
+    event_quest_config_id: 4,      // Main Quests
+    event_day_config_id: 9,        // Day 1
+    stage_config_id: 11,           // Stage 1
+    xp_value: 50,
+    primary_tag: 4,                // guild: Digital Currency & Stablecoins
+    tags: [3],                     // guild: Payments
+    user_types: [1, 2],            // Builder, Operator
+  },
+});
+```
+
+```json
+{
+  "status": "Success",
+  "message": "Created \"Stablecoin Rails, End to End\".",
+  "data": {
+    "id": "3f9a…",
+    "name": "Stablecoin Rails, End to End",
+    "day": "2026-09-15",
+    "start_time": "2026-09-15T15:00:00Z",
+    "end_time": "2026-09-15T16:00:00Z",
+    "xp_value": 50,
+    "quest": { "id": 4, "name": "Main Quests" },
+    "event_day": { "id": 9, "name": "Day 1" },
+    "stage": { "id": 11, "name": "Stage 1" },
+    "tags": [
+      { "id": 4, "name": "Digital Currency & Stablecoins", "is_primary": true },
+      { "id": 3, "name": "Payments", "is_primary": false }
+    ],
+    "primary_tag": { "id": 4, "name": "Digital Currency & Stablecoins", "is_primary": true },
+    "user_types": [{ "id": 1, "name": "Builder" }, { "id": 2, "name": "Operator" }]
+  }
+}
+```
+
+`data` is read back from the join tables rather than echoed from the request, so
+it is what was actually stored. Feed `data.id` straight into
+[`GET user/agenda/{id}`](#75-get-useragendaid--one-event) to see it as the app
+will.
+
+**`update` is a patch, and every field above is editable.** It needs `id` (the
+event's uuid; `agenda_id` is accepted too) plus whatever is changing — absent keys
+are left alone, and an explicit `null` clears an optional field. `end_time` is
+checked against the *stored* `start_time`, so moving one end of a session still has
+to make sense. Sending nothing but `id` is a 400 rather than a no-op.
+
+```ts
+// One field
+await supabase.functions.invoke("admin/agenda/update", {
+  body: { id: eventId, stage_config_id: 12, xp_value: 75 },
+});
+
+// Or the whole event — same field set as create, plus `id`
+await supabase.functions.invoke("admin/agenda/update", {
+  body: {
+    id: eventId,
+    name: "Stablecoin Rails, End to End",
+    description: "Rails, end to end.",
+    day: "2026-09-16",
+    start_time: "2026-09-16T16:30:00Z",
+    end_time: "2026-09-16T17:15:00Z",
+    speaker_name: "Grace Hopper",
+    speaker_title: "Chief Engineer",
+    speaker_company: "Compiler Works",
+    location: "Stage 2, Activation Hall",
+    event_quest_config_id: 5,
+    event_day_config_id: 10,
+    stage_config_id: 12,
+    xp_value: 75,
+    capacity: 150,
+    is_sponsored: true,
+    is_invite_only: true,
+    sort_order: 20,
+    status: "scheduled",
+    primary_tag: 1,
+    tags: [3],
+    user_types: [1, 3],
+  },
+});
+```
+
+`tags` / `primary_tag` and `user_types` **replace** that whole set when present —
+`"tags": []` removes the tags — and are untouched when absent. There is no
+transaction across PostgREST calls, so:
+
+- on **create**, if the tags or audiences fail to write, the event row is deleted
+  again rather than left half-created (both join tables cascade), and the response
+  is a 400 saying so;
+- on **update**, the column changes are already saved, so the response reports
+  which half failed (`… The event's other fields were saved.`) and the previous
+  tags are put back.
+
+| Status | Body |
+| --- | --- |
+| 400 | `"name" is required.` / `"day" must be a date in YYYY-MM-DD form, or null.` / `"start_time" needs a time zone — end it with Z or an offset like -05:00.` / `"end_time" must be after "start_time".` |
+| 400 | `"stage": config 9 is "Day 1" of type event-day, not stage-type.` / `"quest": "Keynote" does not match any event-quest. One of: Main Quests, Side Quests, Bonus Quests, My Schedule.` |
+| 400 | `At most 2 tags per event (one primary, one secondary).` / `Only one tag can be the primary one.` / `primary_tag: "Stablecoins" is not a guild.` |
+| 400 | `Nothing to change — send at least one field to update.` (update only) |
+| 404 | `That event could not be found.` (update only) |
+
+Deleting an event has no route: it would orphan schedules, check-ins and awarded
+XP, so it is a Studio/SQL operation.
+
 ### Errors (all routes)
 
 | Status | Body |
@@ -1941,7 +2106,8 @@ These have no endpoint. The ones marked *SDK* need no backend work — call
 | Profile image upload | Built — `PUT user/profile` uploads to the `profile-images` bucket, see [§4.2](#42-put-userprofile--update-my-profile) |
 | Sending push notifications | Rows can be inserted into `notifications` server-side, but nothing delivers to FCM/APNs yet |
 | Sponsor management | Reading is built — `GET config/sponsors`, see [§5](#5-config--reference-data). *Writing* has no route: rows are added in Studio or by the service role |
-| Admin: agenda, missions, QR codes, leaderboard (**writing**) | **Deliberately not built** — the user side is done ([§6](#6-home-missions-qr-codes-and-the-leaderboard), [§7](#7-agenda)) and admins can *read* per-event statistics via [§11.6](#116-get-adminstats--usage-statistics); authoring events, missions and QR codes is done in Studio or by the service role for now. `public.mint_qr_codes()` mints a batch of codes to print — see below |
+| Admin: agenda (**writing**) | Built — `POST admin/agenda/create` and `POST admin/agenda/update`, see [§11.7](#117-post-adminagendacreate-and-post-adminagendaupdate). *Deleting* an event still has no route: it would orphan schedules, check-ins and awarded XP |
+| Admin: missions, QR codes, leaderboard (**writing**) | **Deliberately not built** — the user side is done ([§6](#6-home-missions-qr-codes-and-the-leaderboard), [§7](#7-agenda)) and admins can *read* per-event statistics via [§11.6](#116-get-adminstats--usage-statistics); authoring missions and QR codes is done in Studio or by the service role for now. `public.mint_qr_codes()` mints a batch of codes to print — see below |
 | Admin: approve invite-only requests | Not built. Attendees can already express interest ([§7.4](#74-post-useragendaschedule--add-remove-or-ask)); approving means setting `public.user_agenda.status` to `approved` or `rejected`, which awards the mission XP through the same trigger. Until there is a route, an admin does it in Studio |
 | Admin: usage statistics | Built — `GET admin/stats`, see [§11.6](#116-get-adminstats--usage-statistics) |
 | Admin: mark an attendee as having shown up | Not built. `public.agenda_checkins` is the table it would write, and scanning the session's QR code already does it for the attendee |
