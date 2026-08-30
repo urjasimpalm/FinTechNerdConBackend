@@ -15,6 +15,7 @@
 // ids come from one shared sequence and differ between environments, which is the
 // same reason public.award_agenda_mission() and questSection() in user/agenda.ts
 // match on the name.
+import { readBoolean, readInt } from "../_shared/fields.ts";
 import { fail, integer, ok, text } from "../_shared/http.ts";
 import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
 
@@ -133,29 +134,6 @@ function resolveGuild(
     guild.name.toLowerCase() === name.toLowerCase()
   );
   return match ? { id: match.id } : { error: `${field}: "${name}" is not a guild.` };
-}
-
-/** Accepts a real boolean or the strings/numbers a form would send for one. */
-function readBoolean(
-  value: unknown,
-  field: string,
-): { value: boolean } | { error: string } {
-  if (typeof value === "boolean") return { value };
-  const raw = typeof value === "string" ? value.trim().toLowerCase() : value;
-  if (raw === "true" || raw === 1 || raw === "1") return { value: true };
-  if (raw === "false" || raw === 0 || raw === "0") return { value: false };
-  return { error: `${field} must be true or false.` };
-}
-
-function readInt(
-  value: unknown,
-  field: string,
-  min: number,
-): { value: number } | { error: string } {
-  const parsed = integer(value);
-  if (parsed === null) return { error: `${field} must be a whole number.` };
-  if (parsed < min) return { error: `${field} must be ${min} or more.` };
-  return { value: parsed };
 }
 
 /**

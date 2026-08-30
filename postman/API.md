@@ -925,8 +925,10 @@ name. That call is what the register screen makes before the user has a token, a
 it shouldn't carry a screen's worth of logos and copy that the register screen has
 no use for. `GET config?type=sponsors,guilds` works if you want both in one call.
 
-Adding, editing and removing sponsors has no route — rows are managed in Studio or
-by the service role. See [§12](#12-not-built-yet).
+Adding and editing sponsors is admin-side — see
+[§11.8](#118-post-adminsponsorcreate-and-post-adminsponsorupdate). Removing one has
+no route on purpose: `is_active = false` takes a sponsor off this list and keeps
+the row.
 
 ### Direct table access (signed-in users)
 
@@ -1673,8 +1675,9 @@ supabase.channel("announcement")
 
 Admin-only routes, all on one function. `user/*` manages `public.email_stack` —
 the invite list registration is gated on — `announcement/*` edits the banner
-from [§10](#10-announcement), and `agenda/*` authors the schedule the Agenda
-screen reads ([§7](#7-agenda)).
+from [§10](#10-announcement), `agenda/*` authors the schedule the Agenda screen
+reads ([§7](#7-agenda)), and `sponsor/*` the list behind
+[`GET config/sponsors`](#get-configsponsors--the-sponsor-list).
 
 **Admin only:** the caller needs a signed-in session whose `public.users` row has
 `is_admin = true`, sent as `Authorization: Bearer <token>` like any authenticated
@@ -1690,6 +1693,8 @@ request.
 | `/functions/v1/admin/stats` | `GET` |
 | `/functions/v1/admin/agenda/create` | `POST` |
 | `/functions/v1/admin/agenda/update` | `POST` |
+| `/functions/v1/admin/sponsor/create` | `POST` |
+| `/functions/v1/admin/sponsor/update` | `POST` |
 
 For the `user/*` routes, entries are **invitations, not accounts**: adding one
 lets that address register, removing one stops future registrations but leaves any
@@ -1894,8 +1899,8 @@ Requires an admin token; a non-admin gets `403`.
 ### 11.7 `POST admin/agenda/create` and `POST admin/agenda/update`
 
 Authoring events. Nothing in the app calls these — the app only ever *reads* the
-agenda — so they are back-office routes, and they live in Postman under
-**Z. Not used by the app** rather than beside the Agenda flow.
+agenda — so they are back-office routes, in Postman under **9. Admin routes**
+rather than beside the Agenda flow.
 
 One event spans three tables, and both routes write all three in one call:
 `public.agenda`, its tags in `public.agenda_guilds`, and its
@@ -2048,6 +2053,129 @@ transaction across PostgREST calls, so:
 Deleting an event has no route: it would orphan schedules, check-ins and awarded
 XP, so it is a Studio/SQL operation.
 
+### 11.8 `POST admin/sponsor/create` and `POST admin/sponsor/update`
+
+The other half of the back-office pair: `public.sponsors`, the list the public
+[`GET config/sponsors`](#get-configsponsors--the-sponsor-list) serves.
+
+**Only `name` is required on create.** A logo and copy tend to arrive later in the
+run-up to the event, so a row with just a name is a legitimate placeholder.
+
+Both routes accept **`multipart/form-data` or JSON**, the same as
+[`PUT user/profile`](#42-put-userprofile--update-my-profile) — multipart is what a
+form with a file picker sends.
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `name` | string | **Required on create.** The sponsor or contact name, up to 200 characters. Cannot be cleared |
+| `company_name` | string | Up to 200 characters. Empty (or `null` in JSON) clears it |
+| `description` | string | Up to 2000 characters. Empty clears it |
+| `profile_image` | file / string | The logo or headshot — see below |
+| `is_active` | boolean | Default `true`. `false` retires a sponsor without deleting the row |
+
+**`sort_order` is not a parameter.** Display order is not something these routes
+decide: the column keeps its default of `0`, so the sponsor screen falls back to
+ordering by name (the tie-break in `sponsors_sort_idx`), and a deliberate ordering
+is set in Studio or SQL. It is still returned, so a back-office list can show it.
+
+#### The image
+
+Send **the image itself**, not a URL. Three ways in, and all of them end with
+`profile_image` holding a public URL:
+
+| How | What to send |
+| --- | --- |
+| A picked file | `multipart/form-data` with the image under `profile_image` — the file part, exactly as `PUT user/profile` takes an avatar |
+| A data URI | `profile_image` as `data:image/png;base64,…`, in a form field or in JSON |
+| Already hosted | `profile_image` as an `http(s)` URL, stored as-is |
+
+An **unselected** file part means "keep the current logo", not "remove it" — a form
+cannot carry null, so clearing it takes an empty `profile_image` value.
+
+Uploads land in the **`sponsor-images`** bucket as
+`<sponsor-id>/<upload-timestamp>.<ext>` — a bucket of its own rather than a folder
+in `profile-images`, because nobody writes here except an admin through this route,
+and that stays true by construction. `jpeg`, `png`, `webp`, `heic`, `heif`, up to
+5 MB; anything else is a 400 naming the type. An empty value (or `null` in JSON)
+takes the logo down.
+
+On `update`, a new image **replaces** the old one and the file it pointed at is
+deleted, so retired logos do not accumulate — only files in that sponsor's own
+folder, never an `http(s)` URL hosted elsewhere.
+
+```ts
+// A picked file
+const form = new FormData();
+form.append("name", "Jane Okafor");
+form.append("company_name", "Acme Payments");
+form.append("description", "Payment rails for the rest of us.");
+form.append("profile_image", file);            // a File or Blob
+const { data } = await supabase.functions.invoke("admin/sponsor/create", { body: form });
+
+// Or JSON with a data URI
+await supabase.functions.invoke("admin/sponsor/create", {
+  body: {
+    name: "Jane Okafor",
+    company_name: "Acme Payments",
+    profile_image: "data:image/png;base64,iVBORw0KGgo…",
+  },
+});
+```
+
+Do **not** set `Content-Type` yourself when posting a `FormData` — the runtime adds
+it with the multipart boundary, and overriding it makes the body unreadable.
+
+```json
+{
+  "status": "Success",
+  "message": "Added \"Jane Okafor\".",
+  "data": {
+    "id": 1,
+    "name": "Jane Okafor",
+    "company_name": "Acme Payments",
+    "description": "Payment rails for the rest of us.",
+    "profile_image": "https://<ref>.supabase.co/storage/v1/object/public/sponsor-images/1/1756500000000.png",
+    "sort_order": 0,
+    "is_active": true,
+    "created_at": "2026-08-30T09:00:00Z"
+  }
+}
+```
+
+`data` is exactly what `GET config/sponsors` returns for the row, plus
+`created_at`, so a back-office list can render the response without re-reading.
+
+On create the row is written **first** and the image second, because the object is
+stored under the sponsor's id and identity ids are assigned by the insert. If the
+upload fails the row is deleted again rather than left behind as a sponsor nobody
+asked for.
+
+**`update` is a patch, and every field above is editable.** It needs `id` (the
+sponsor's integer id; `sponsor_id` is accepted too) plus whatever is changing —
+absent fields are left alone, an empty value clears an optional one, and sending
+nothing but `id` is a 400 rather than a no-op.
+
+```ts
+// Take one down — the row, its history and its logo are kept
+await supabase.functions.invoke("admin/sponsor/update", {
+  body: { id: 1, is_active: false },
+});
+```
+
+| Status | Body |
+| --- | --- |
+| 400 | `"name" is required.` / `"name" cannot be null.` / `"company_name" must be 200 characters or fewer.` |
+| 400 | `Unsupported image type "image/gif". Use image/jpeg, image/png, image/webp, image/heic, image/heif.` / `Images must be 5 MB or smaller.` / `"profile_image" could not be decoded.` |
+| 400 | `"profile_image" must be a file, a data URI, an http(s) URL, or null.` / `The form data could not be read.` |
+| 400 | `Nothing to change — send at least one field to update.` (update only) |
+| 404 | `That sponsor could not be found.` (update only) |
+
+**There is no delete route.** `is_active = false` is how a sponsor comes off the
+screen, which is what the read path already filters on — deleting the row would
+lose it. Note the sponsor list is CDN-cached for 5 minutes
+([§5](#5-config--reference-data)), so a change can take that long to show up in
+the app.
+
 ### Errors (all routes)
 
 | Status | Body |
@@ -2105,7 +2233,7 @@ These have no endpoint. The ones marked *SDK* need no backend work — call
 | Delete account | Partly — `DELETE /rest/v1/users?id=eq.<my-id>` removes the profile, but the `auth.users` row survives, so the email cannot be re-registered. Needs an edge function to do both |
 | Profile image upload | Built — `PUT user/profile` uploads to the `profile-images` bucket, see [§4.2](#42-put-userprofile--update-my-profile) |
 | Sending push notifications | Rows can be inserted into `notifications` server-side, but nothing delivers to FCM/APNs yet |
-| Sponsor management | Reading is built — `GET config/sponsors`, see [§5](#5-config--reference-data). *Writing* has no route: rows are added in Studio or by the service role |
+| Sponsor management | Built — `GET config/sponsors` reads, `POST admin/sponsor/create` and `POST admin/sponsor/update` write, see [§11.8](#118-post-adminsponsorcreate-and-post-adminsponsorupdate). *Deleting* has no route: `is_active = false` retires a sponsor and keeps the row |
 | Admin: agenda (**writing**) | Built — `POST admin/agenda/create` and `POST admin/agenda/update`, see [§11.7](#117-post-adminagendacreate-and-post-adminagendaupdate). *Deleting* an event still has no route: it would orphan schedules, check-ins and awarded XP |
 | Admin: missions, QR codes, leaderboard (**writing**) | **Deliberately not built** — the user side is done ([§6](#6-home-missions-qr-codes-and-the-leaderboard), [§7](#7-agenda)) and admins can *read* per-event statistics via [§11.6](#116-get-adminstats--usage-statistics); authoring missions and QR codes is done in Studio or by the service role for now. `public.mint_qr_codes()` mints a batch of codes to print — see below |
 | Admin: approve invite-only requests | Not built. Attendees can already express interest ([§7.4](#74-post-useragendaschedule--add-remove-or-ask)); approving means setting `public.user_agenda.status` to `approved` or `rejected`, which awards the mission XP through the same trigger. Until there is a route, an admin does it in Studio |

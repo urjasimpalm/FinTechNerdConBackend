@@ -158,6 +158,12 @@
       "value": "",
       "description": "Set by 'Create an agenda event (admin)' in the Z folder, and read by the update request next to it.",
       "type": "string"
+    },
+    {
+      "key": "created_sponsor_id",
+      "value": "",
+      "description": "Set by 'Create a sponsor (admin)', and read by the update request next to it.",
+      "type": "string"
     }
   ],
   "item": [
@@ -2670,7 +2676,7 @@
     },
     {
       "name": "9. Admin routes",
-      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth \u2192 Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
+      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post, GET admin/stats, POST admin/agenda/create, POST admin/agenda/update, POST admin/sponsor/create, POST admin/sponsor/update.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees; agenda/* and sponsor/* author the schedule and the sponsor list, which no app screen writes to \u2014 run each create before the update next to it, since it stashes the new id in a collection variable. See postman/API.md \u00a711.7 and \u00a711.8.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth \u2192 Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
       "item": [
         {
           "name": "List attendee emails",
@@ -3012,69 +3018,9 @@
               }
             }
           ]
-        }
-      ]
-    },
-    {
-      "name": "10. Announcement",
-      "description": "The event-wide banner, as users read it: a single row in public.announcements, readable by any signed-in user. Admins edit it through **9. Admin routes**.\n\nEmpty `text` means there is no announcement \u2014 hide the banner rather than rendering an empty bar.",
-      "item": [
+        },
         {
-          "name": "Get announcement",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "apikey",
-                "value": "{{anon_key}}"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/rest/v1/announcements?select=text,map_image,updated_at",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "rest",
-                "v1",
-                "announcements"
-              ],
-              "query": [
-                {
-                  "key": "select",
-                  "value": "text,map_image,updated_at"
-                }
-              ]
-            },
-            "description": "Returns an array with the single announcement row:\n\n```json\n[{ \"text\": \"Keynote moved to 10am.\", \"updated_at\": \"2026-08-19T11:00:29.927669+00:00\" }]\n```\n\nIn supabase-js, `.select('text, updated_at').single()` gives you the object directly.\n\nNeeds a session \u2014 the select policy is `to authenticated`, so without one this is a 401. Writes are rejected on this path for everyone, admins included."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));",
-                  "pm.test('one announcement row', () => {",
-                  "  const rows = pm.response.json();",
-                  "  pm.expect(rows).to.be.an('array').with.lengthOf(1);",
-                  "  pm.expect(rows[0].text).to.be.a('string');",
-                  "});",
-                  "const text = pm.response.json()[0].text;",
-                  "console.log(text ? `Banner: ${text}` : 'No announcement set \u2014 the client should hide the banner.');"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Z. Not used by the app (direct REST)",
-      "description": "Kept for debugging, for anyone poking at the tables directly, and for the admin-side writes no screen makes.\n\n**admin/agenda/create** and **admin/agenda/update** are the two below: they author the schedule the Agenda screen reads, so they are admin tooling rather than app endpoints. See postman/API.md \u00a711.7.\n\nThe rest are direct REST reads the app should call an edge function for instead:\n\n- guilds / configs \u2192 **2. Config** (`GET config`)\n- chat create / participants / messages \u2192 **7. Chat** (`chat/create`, `chat/list`, `chat/details/{id}`, `chat/send/{id}`)\n\nThese still work \u2014 the RLS policies allow them \u2014 but the function routes do the multi-step writes in one transaction and return the shapes the screens need. See postman/API.md \u00a78.6.",
-      "item": [
-        {
-          "name": "Create an agenda event (admin)",
+          "name": "Create an agenda event",
           "request": {
             "method": "POST",
             "header": [
@@ -3141,7 +3087,7 @@
           ]
         },
         {
-          "name": "Update an agenda event (admin)",
+          "name": "Update an agenda event",
           "request": {
             "method": "POST",
             "header": [
@@ -3199,6 +3145,247 @@
             }
           ]
         },
+        {
+          "name": "Create a sponsor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/sponsor/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "sponsor",
+                "create"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "name",
+                  "value": "Postman: Jane Okafor",
+                  "type": "text"
+                },
+                {
+                  "key": "company_name",
+                  "value": "Acme Payments",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Payment rails for the rest of us.",
+                  "type": "text"
+                },
+                {
+                  "key": "is_active",
+                  "value": "true",
+                  "type": "text"
+                },
+                {
+                  "key": "profile_image",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a JPEG/PNG/WebP/HEIC under 5 MB. Leave it unselected to keep the current logo."
+                }
+              ]
+            },
+            "description": "Adds a sponsor to `public.sponsors` \u2014 the list behind `GET config/sponsors` (**2. Config \u2192 Sponsors**). **Admin only.**\n\nOnly `name` is required; a logo and copy usually arrive later in the run-up to the event, so a row with just a name is a legitimate placeholder.\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| name | string | **Required on create.** The sponsor or contact name, up to 200 characters. Cannot be cleared |\n| company_name | string | Up to 200 characters. Empty (or `null` in JSON) clears it |\n| description | string | Up to 2000 characters. Empty clears it |\n| profile_image | file / string | The logo \u2014 see below |\n| is_active | boolean | Default `true`. `false` retires a sponsor without deleting the row \u2014 which is why there is no delete route |\n\n**The logo is the image itself, not a URL.** Three ways in, and all of them end with `profile_image` holding a public URL in the `sponsor-images` bucket:\n\n| How | What to send |\n| --- | --- |\n| A picked file | The `profile_image` file part of this request \u2014 select an image and it is uploaded |\n| A data URI | `profile_image` as `data:image/png;base64,\u2026`, in a form field or in JSON |\n| Already hosted | `profile_image` as an `http(s)` URL, which is stored as-is |\n\nLeaving the file part unselected means \"keep the current logo\" \u2014 it is not \"remove it\". Stored as `sponsor-images/<sponsor-id>/<upload-timestamp>.<ext>`, so a replaced logo is never served from a CDN cache of the old one, and replacing one deletes the file it replaced. `jpeg`, `png`, `webp`, `heic`, `heif`, up to 5 MB \u2014 anything else is a 400 naming the type. An empty value (or `null` in JSON) takes the logo down.\n\n**`sort_order` is not a parameter.** Display order is not something these routes decide: the column keeps its default of `0`, so the sponsor screen orders by name, and a deliberate ordering is set in Studio or SQL.\n\nThe row is written first and the image second, because the object is stored under the sponsor's id and the id is assigned by the insert. If the upload fails the row is deleted again rather than left behind \u2014 a 400, and nothing is created.\n\n- **200** `data` is the created sponsor, exactly as `GET config/sponsors` returns it, plus `created_at`\n- **400** a validation failure, naming the field, or an image that could not be stored\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false\n\nThe sponsor screen is public and CDN-cached for 5 minutes, so a new row can take that long to appear there."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('created', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.id).to.be.a('number');",
+                  "    pm.expect(body.data.name).to.eql('Postman: Jane Okafor');",
+                  "    pm.expect(body.data.company_name).to.eql('Acme Payments');",
+                  "    pm.expect(body.data.is_active).to.eql(true);",
+                  "    // Not settable through this route, so it stays at the column default.",
+                  "    pm.expect(body.data.sort_order).to.eql(0);",
+                  "  });",
+                  "  // Only asserted when a file was actually attached to the form.",
+                  "  if (body.data && body.data.profile_image) {",
+                  "    pm.test('logo is a public URL in the sponsor-images bucket', () => {",
+                  "      pm.expect(body.data.profile_image).to.include('/storage/v1/object/public/sponsor-images/');",
+                  "      pm.expect(body.data.profile_image).to.include(`/${body.data.id}/`);",
+                  "    });",
+                  "  }",
+                  "  pm.collectionVariables.set('created_sponsor_id', body.data.id);",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update a sponsor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/sponsor/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "sponsor",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "id",
+                  "value": "{{created_sponsor_id}}",
+                  "type": "text",
+                  "description": "Required. Set by Create a sponsor above."
+                },
+                {
+                  "key": "name",
+                  "value": "Postman: Jane Okafor (edited)",
+                  "type": "text"
+                },
+                {
+                  "key": "company_name",
+                  "value": "Acme Payments International",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Payment rails for the rest of us. Now in 40 countries.",
+                  "type": "text"
+                },
+                {
+                  "key": "is_active",
+                  "value": "true",
+                  "type": "text"
+                },
+                {
+                  "key": "profile_image",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a JPEG/PNG/WebP/HEIC under 5 MB. Leave it unselected to keep the current logo."
+                }
+              ]
+            },
+            "description": "Edits a sponsor. **Admin only.** Takes the id from **Create a sponsor** above (`{{created_sponsor_id}}`).\n\n**Every field is editable** \u2014 the body below sends all of them, so disable the parts that should stay as they are. It is a patch: only the fields present are written, absent ones are left alone, and an empty value (or `null` in JSON) clears an optional field. Sending nothing but `id` is a 400 rather than a no-op.\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| id | integer | **Required.** The sponsor's id (`sponsor_id` is accepted too) |\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| name | string | **Required on create.** The sponsor or contact name, up to 200 characters. Cannot be cleared |\n| company_name | string | Up to 200 characters. Empty (or `null` in JSON) clears it |\n| description | string | Up to 2000 characters. Empty clears it |\n| profile_image | file / string | The logo \u2014 see below |\n| is_active | boolean | Default `true`. `false` retires a sponsor without deleting the row \u2014 which is why there is no delete route |\n\n**The logo is the image itself, not a URL.** Three ways in, and all of them end with `profile_image` holding a public URL in the `sponsor-images` bucket:\n\n| How | What to send |\n| --- | --- |\n| A picked file | The `profile_image` file part of this request \u2014 select an image and it is uploaded |\n| A data URI | `profile_image` as `data:image/png;base64,\u2026`, in a form field or in JSON |\n| Already hosted | `profile_image` as an `http(s)` URL, which is stored as-is |\n\nLeaving the file part unselected means \"keep the current logo\" \u2014 it is not \"remove it\". Stored as `sponsor-images/<sponsor-id>/<upload-timestamp>.<ext>`, so a replaced logo is never served from a CDN cache of the old one, and replacing one deletes the file it replaced. `jpeg`, `png`, `webp`, `heic`, `heif`, up to 5 MB \u2014 anything else is a 400 naming the type. An empty value (or `null` in JSON) takes the logo down.\n\n**`sort_order` is not a parameter.** Display order is not something these routes decide: the column keeps its default of `0`, so the sponsor screen orders by name, and a deliberate ordering is set in Studio or SQL.\n\nA new image replaces the old one and **the file it pointed at is deleted**, so retired logos do not accumulate. Only files in this sponsor's own folder are removed \u2014 an `http(s)` URL that lives elsewhere is never touched.\n\n**Taking a sponsor down** is `is_active` = `false`, which keeps the row and its history. There is no delete route.\n\n- **200** `data` is the sponsor as it now stands\n- **400** a validation failure, or nothing was sent to change\n- **404** no sponsor with that id\n- **401 / 403** as above"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403, 404]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('every field sent was written', () => {",
+                  "    pm.expect(String(body.data.id)).to.eql(pm.collectionVariables.get('created_sponsor_id'));",
+                  "    pm.expect(body.data.name).to.eql('Postman: Jane Okafor (edited)');",
+                  "    pm.expect(body.data.company_name).to.eql('Acme Payments International');",
+                  "    pm.expect(body.data.description).to.include('40 countries');",
+                  "  });",
+                  "  // Only asserted when a file was actually attached to the form.",
+                  "  if (body.data && body.data.profile_image) {",
+                  "    pm.test('logo is a public URL in the sponsor-images bucket', () => {",
+                  "      pm.expect(body.data.profile_image).to.include('/storage/v1/object/public/sponsor-images/');",
+                  "    });",
+                  "  }",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- run Create a sponsor first, as a user with is_admin = true.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10. Announcement",
+      "description": "The event-wide banner, as users read it: a single row in public.announcements, readable by any signed-in user. Admins edit it through **9. Admin routes**.\n\nEmpty `text` means there is no announcement \u2014 hide the banner rather than rendering an empty bar.",
+      "item": [
+        {
+          "name": "Get announcement",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rest/v1/announcements?select=text,map_image,updated_at",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rest",
+                "v1",
+                "announcements"
+              ],
+              "query": [
+                {
+                  "key": "select",
+                  "value": "text,map_image,updated_at"
+                }
+              ]
+            },
+            "description": "Returns an array with the single announcement row:\n\n```json\n[{ \"text\": \"Keynote moved to 10am.\", \"updated_at\": \"2026-08-19T11:00:29.927669+00:00\" }]\n```\n\nIn supabase-js, `.select('text, updated_at').single()` gives you the object directly.\n\nNeeds a session \u2014 the select policy is `to authenticated`, so without one this is a 401. Writes are rejected on this path for everyone, admins included."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('one announcement row', () => {",
+                  "  const rows = pm.response.json();",
+                  "  pm.expect(rows).to.be.an('array').with.lengthOf(1);",
+                  "  pm.expect(rows[0].text).to.be.a('string');",
+                  "});",
+                  "const text = pm.response.json()[0].text;",
+                  "console.log(text ? `Banner: ${text}` : 'No announcement set \u2014 the client should hide the banner.');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Z. Not used by the app (direct REST)",
+      "description": "Kept for debugging and for anyone poking at the tables directly. The app should call the edge functions instead:\n\n- guilds / configs \u2192 **2. Config** (`GET config`)\n- chat create / participants / messages \u2192 **7. Chat** (`chat/create`, `chat/list`, `chat/details/{id}`, `chat/send/{id}`)\n\nThese still work \u2014 the RLS policies allow them \u2014 but the function routes do the multi-step writes in one transaction and return the shapes the screens need. See postman/API.md \u00a78.6.\n\nThe admin write routes that used to live here are now in **9. Admin routes**.",
+      "item": [
         {
           "name": "Guilds",
           "request": {

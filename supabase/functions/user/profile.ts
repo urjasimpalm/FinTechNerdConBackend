@@ -5,6 +5,13 @@
 // under `profile_image`, stores it in the profile-images bucket and saves the
 // public URL. JSON callers can send a data URI, an https URL, or null instead.
 import { fail, integer, ok, text } from "../_shared/http.ts";
+import {
+  bucketPath as pathInBucket,
+  contentTypeFor,
+  decodeDataUri as decodeImageDataUri,
+  isDataUri,
+  uploadImage as putImage,
+} from "../_shared/images.ts";
 import { findConnection, summarise } from "../_shared/connections.ts";
 import {
   findUnknownGuild,
@@ -16,17 +23,10 @@ import {
 } from "../_shared/profile.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
+// Avatars live under the user's own id in this bucket. The upload itself, the
+// accepted types and the size cap are in _shared/images.ts, shared with the
+// sponsor logos in admin/sponsor.ts.
 const BUCKET = "profile-images";
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-// Kept in line with allowed_mime_types on the bucket, so a rejection is a 400
-// from here rather than an opaque storage error.
-const IMAGE_TYPES: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/heic": "heic",
-  "image/heif": "heif",
-};
 
 // The editable set. Anything else in the body is ignored rather than rejected, so
 // a client can PUT a whole profile object back — including nerd_number and email,
@@ -86,107 +86,6 @@ export async function loadProfile(userId: string): Promise<
       rank: standing?.rank == null ? null : Number(standing.rank),
     },
   };
-}
-
-function isDataUri(value: string): boolean {
-  return value.startsWith("data:");
-}
-
-// Mobile clients often post a file part with no (or a generic) content type, so
-// fall back to the filename extension before giving up on it.
-function contentTypeFor(file: File): string {
-  const declared = (file.type || "").toLowerCase();
-  if (declared in IMAGE_TYPES) return declared;
-
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const matched = Object.entries(IMAGE_TYPES).find(([, ext]) =>
-    ext === (extension === "jpeg" ? "jpg" : extension)
-  );
-  return matched ? matched[0] : declared;
-}
-
-/** Path of an object in our bucket, or null if the URL points somewhere else. */
-function bucketPath(url: unknown): string | null {
-  if (typeof url !== "string") return null;
-  const marker = `/storage/v1/object/public/${BUCKET}/`;
-  const at = url.indexOf(marker);
-  if (at < 0) return null;
-  const path = url.slice(at + marker.length).split("?")[0];
-  return path.length > 0 ? decodeURIComponent(path) : null;
-}
-
-/**
- * Puts the image in storage under the caller's own folder and hands back its
- * public URL. Named with an upload timestamp rather than a fixed filename, so a
- * replaced avatar is not served from a CDN cache of the old one.
- */
-async function uploadImage(
-  userId: string,
-  bytes: Uint8Array,
-  contentType: string,
-): Promise<{ url: string } | { error: string }> {
-  // image/jpg is not a registered type but plenty of clients send it.
-  const type = contentType === "image/jpg" ? "image/jpeg" : contentType;
-  const extension = IMAGE_TYPES[type];
-  if (!extension) {
-    return {
-      error: `Unsupported image type "${contentType}". Use ${
-        Object.keys(IMAGE_TYPES).join(", ")
-      }.`,
-    };
-  }
-  if (bytes.byteLength === 0) return { error: "The image file is empty." };
-  if (bytes.byteLength > MAX_IMAGE_BYTES) {
-    return { error: `Images must be ${MAX_IMAGE_BYTES / 1024 / 1024} MB or smaller.` };
-  }
-
-  const service = serviceClient();
-  const path = `${userId}/${Date.now()}.${extension}`;
-  const { error } = await service.storage.from(BUCKET).upload(path, bytes, {
-    contentType: type,
-    upsert: true,
-  });
-
-  if (error) {
-    console.error("profile image upload failed", error);
-    return { error: "The image could not be uploaded. Please try again." };
-  }
-
-  return { url: service.storage.from(BUCKET).getPublicUrl(path).data.publicUrl };
-}
-
-/** data:image/png;base64,AAAA… → bytes plus the declared content type. */
-function decodeDataUri(
-  value: string,
-): { bytes: Uint8Array; contentType: string } | { error: string } {
-  const comma = value.indexOf(",");
-  if (comma < 0) return { error: "profile_image is not a valid data URI." };
-
-  // Split on the first comma rather than pattern-matching the whole thing: the
-  // header can carry extra parameters (data:image/jpeg;charset=utf-8;base64,…)
-  // and the payload can contain commas.
-  const header = value.slice("data:".length, comma).toLowerCase();
-  const payload = value.slice(comma + 1);
-  const contentType = header.split(";")[0].trim();
-  if (!contentType) return { error: "profile_image is missing its image type." };
-
-  try {
-    if (!header.includes(";base64")) {
-      return {
-        bytes: new TextEncoder().encode(decodeURIComponent(payload)),
-        contentType,
-      };
-    }
-    // Line breaks are common in base64 that came off a file, and some clients
-    // send the URL-safe alphabet; atob() accepts neither.
-    const normalised = payload.replace(/\s/g, "").replace(/-/g, "+").replace(/_/g, "/");
-    return {
-      bytes: Uint8Array.from(atob(normalised), (char) => char.charCodeAt(0)),
-      contentType,
-    };
-  } catch {
-    return { error: "profile_image could not be decoded." };
-  }
 }
 
 /**
@@ -357,7 +256,8 @@ export async function updateProfile(req: Request, userId: string): Promise<Respo
   // The image, in whichever form it arrived. A file always wins over a
   // profile_image text field sent alongside it.
   if (file) {
-    const uploaded = await uploadImage(
+    const uploaded = await putImage(
+      BUCKET,
       userId,
       new Uint8Array(await file.arrayBuffer()),
       contentTypeFor(file),
@@ -371,9 +271,9 @@ export async function updateProfile(req: Request, userId: string): Promise<Respo
     } else if (typeof raw !== "string") {
       return fail("profile_image must be a string, or null to clear it.", 400);
     } else if (isDataUri(raw)) {
-      const decoded = decodeDataUri(raw);
+      const decoded = decodeImageDataUri(raw, "profile_image");
       if ("error" in decoded) return fail(decoded.error, 400);
-      const uploaded = await uploadImage(userId, decoded.bytes, decoded.contentType);
+      const uploaded = await putImage(BUCKET, userId, decoded.bytes, decoded.contentType);
       if ("error" in uploaded) return fail(uploaded.error, 400);
       updates.profile_image = uploaded.url;
     } else if (/^https?:\/\//i.test(raw.trim())) {
@@ -419,8 +319,8 @@ export async function updateProfile(req: Request, userId: string): Promise<Respo
 
   // Best effort, and only for files we uploaded ourselves under this user's
   // folder — never for an external URL, and never after a failed save.
-  const stalePath = bucketPath(previousImage);
-  if (stalePath && stalePath !== bucketPath(updates.profile_image)) {
+  const stalePath = pathInBucket(previousImage, BUCKET);
+  if (stalePath && stalePath !== pathInBucket(updates.profile_image, BUCKET)) {
     if (stalePath.startsWith(`${userId}/`)) {
       const { error: removeError } = await service.storage.from(BUCKET).remove([stalePath]);
       if (removeError) console.error("old profile image cleanup failed", removeError);

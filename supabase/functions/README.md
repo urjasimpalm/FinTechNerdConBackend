@@ -30,6 +30,11 @@ chat, missions, notifications — see [../../postman/API.md](../../postman/API.m
 | Remove attendee-list emails | `DELETE /functions/v1/admin/user/remove` | **admin** user token |
 | Read the announcement (editor) | `GET /functions/v1/admin/announcement/get` | **admin** user token |
 | Save the announcement | `POST /functions/v1/admin/announcement/post` | **admin** user token |
+| Usage statistics | `GET /functions/v1/admin/stats` | **admin** user token |
+| Create an agenda event | `POST /functions/v1/admin/agenda/create` | **admin** user token |
+| Edit an agenda event | `POST /functions/v1/admin/agenda/update` | **admin** user token |
+| Add a sponsor | `POST /functions/v1/admin/sponsor/create` | **admin** user token |
+| Edit a sponsor | `POST /functions/v1/admin/sponsor/update` | **admin** user token |
 
 Base URL:
 

@@ -8,13 +8,17 @@
 //   GET    /functions/v1/admin/stats              usage statistics + per-event list
 //   POST   /functions/v1/admin/agenda/create      { "name": "...", ... }
 //   POST   /functions/v1/admin/agenda/update      { "id": "...", ...fields }
+//   POST   /functions/v1/admin/sponsor/create     name + logo (multipart or JSON)
+//   POST   /functions/v1/admin/sponsor/update     id + whatever is changing
 //
 // user/* manages public.email_stack — the attendee list that registration is
 // gated on. Entries there are invitations, not accounts: adding one lets that
 // address register, removing one stops future registrations but leaves any
 // account that already registered with it untouched.
 //
-// agenda/* authors the schedule the Agenda screen reads. See ./agenda.ts.
+// agenda/* authors the schedule the Agenda screen reads (./agenda.ts) and
+// sponsor/* the list behind GET config/sponsors (./sponsor.ts). Both tables were
+// Studio-only before these routes.
 //
 // Every route requires a signed-in user whose public.users row has
 // is_admin = true. The project's anon key is itself a valid JWT, so `verify_jwt`
@@ -27,6 +31,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { fail, integer, ok, readJson, text } from "../_shared/http.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 import { createEvent, updateEvent } from "./agenda.ts";
+import { createSponsor, updateSponsor } from "./sponsor.ts";
 import { getStats } from "./stats.ts";
 
 const MAX_EMAILS = 200;
@@ -43,6 +48,8 @@ const ROUTES: Record<string, string> = {
   "stats": "GET",
   "agenda/create": "POST",
   "agenda/update": "POST",
+  "sponsor/create": "POST",
+  "sponsor/update": "POST",
 };
 
 // The announcement is a single row pinned to this id.
@@ -377,6 +384,12 @@ Deno.serve(async (req) => {
     if (route === "user/list") return await listUsers(url);
     if (route === "announcement/get") return await getAnnouncement();
     if (route === "stats") return await getStats(url);
+
+    // The sponsor routes take the request itself, not a parsed body: the logo can
+    // arrive as a multipart file, and reading the body as JSON here would consume
+    // it. They accept JSON too — see admin/sponsor.ts.
+    if (route === "sponsor/create") return await createSponsor(req);
+    if (route === "sponsor/update") return await updateSponsor(req);
 
     const body = await readJson(req);
     if (!body) return fail("A JSON body is required.", 400);
