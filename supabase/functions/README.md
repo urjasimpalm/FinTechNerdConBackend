@@ -1,40 +1,40 @@
-# Edge functions
+# Edge Functions
 
 Seven functions. For the whole API surface the app talks to — profile, agenda,
 chat, missions, notifications — see [../../postman/API.md](../../postman/API.md).
 
-| What | Call | Auth needed |
-| --- | --- | --- |
-| Is this email on the attendee list? | `POST /functions/v1/verify-email` | anon key |
-| Register | `POST /functions/v1/register` | anon key |
-| Login | `POST /functions/v1/login` | anon key |
-| Email a password reset code | `POST /functions/v1/forgot-password` | anon key |
-| Set a new password with that code | `POST /functions/v1/reset-password` | anon key |
-| Lookup lists (guilds, user types, days, stages) | `GET /functions/v1/config` | anon key |
-| My profile | `GET /functions/v1/user/profile` | user token |
-| Update my profile (incl. picture upload) | `PUT /functions/v1/user/profile` | user token |
-| Another attendee's profile | `GET /functions/v1/user/profile/{id}` | user token |
-| Attendee directory (search / filter) | `GET /functions/v1/user/people` | user token |
-| Send a connection request | `POST /functions/v1/user/connection/request` | user token |
-| Accept / reject one | `POST /functions/v1/user/connection/respond` | user token |
-| My requests and connections | `GET /functions/v1/user/connection/list` | user token |
-| Guilds with is_joined | `GET /functions/v1/user/guild/list` | user token |
-| Join / leave a guild | `POST /functions/v1/user/guild/membership` | user token |
-| Members of a guild | `GET /functions/v1/user/guild/members` | user token |
-| Start a chat | `POST /functions/v1/chat/create` | user token |
-| My chats | `GET /functions/v1/chat/list` | user token |
-| Open a chat | `GET /functions/v1/chat/details/{id}` | user token |
-| Send a message | `POST /functions/v1/chat/send/{id}` | user token |
-| List attendee-list emails | `GET /functions/v1/admin/user/list` | **admin** user token |
-| Add attendee-list emails | `POST /functions/v1/admin/user/add` | **admin** user token |
-| Remove attendee-list emails | `DELETE /functions/v1/admin/user/remove` | **admin** user token |
-| Read the announcement (editor) | `GET /functions/v1/admin/announcement/get` | **admin** user token |
-| Save the announcement | `POST /functions/v1/admin/announcement/post` | **admin** user token |
-| Usage statistics | `GET /functions/v1/admin/stats` | **admin** user token |
-| Create an agenda event | `POST /functions/v1/admin/agenda/create` | **admin** user token |
-| Edit an agenda event | `POST /functions/v1/admin/agenda/update` | **admin** user token |
-| Add a sponsor | `POST /functions/v1/admin/sponsor/create` | **admin** user token |
-| Edit a sponsor | `POST /functions/v1/admin/sponsor/update` | **admin** user token |
+| What                                            | Call                                         | Auth needed          |
+| ----------------------------------------------- | -------------------------------------------- | -------------------- |
+| Is this email on the attendee list?             | `POST /functions/v1/verify-email`            | anon key             |
+| Register                                        | `POST /functions/v1/register`                | anon key             |
+| Login                                           | `POST /functions/v1/login`                   | anon key             |
+| Email a password reset code                     | `POST /functions/v1/forgot-password`         | anon key             |
+| Set a new password with that code               | `POST /functions/v1/reset-password`          | anon key             |
+| Lookup lists (guilds, user types, days, stages) | `GET /functions/v1/config`                   | anon key             |
+| My profile                                      | `GET /functions/v1/user/profile`             | user token           |
+| Update my profile (incl. picture upload)        | `PUT /functions/v1/user/profile`             | user token           |
+| Another attendee's profile                      | `GET /functions/v1/user/profile/{id}`        | user token           |
+| Attendee directory (search / filter)            | `GET /functions/v1/user/people`              | user token           |
+| Send a connection request                       | `POST /functions/v1/user/connection/request` | user token           |
+| Accept / reject one                             | `POST /functions/v1/user/connection/respond` | user token           |
+| My requests and connections                     | `GET /functions/v1/user/connection/list`     | user token           |
+| Guilds with is_joined                           | `GET /functions/v1/user/guild/list`          | user token           |
+| Join / leave a guild                            | `POST /functions/v1/user/guild/membership`   | user token           |
+| Members of a guild                              | `GET /functions/v1/user/guild/members`       | user token           |
+| Start a chat                                    | `POST /functions/v1/chat/create`             | user token           |
+| My chats                                        | `GET /functions/v1/chat/list`                | user token           |
+| Open a chat                                     | `GET /functions/v1/chat/details/{id}`        | user token           |
+| Send a message                                  | `POST /functions/v1/chat/send/{id}`          | user token           |
+| List attendee-list emails                       | `GET /functions/v1/admin/user/list`          | **admin** user token |
+| Add attendee-list emails                        | `POST /functions/v1/admin/user/add`          | **admin** user token |
+| Remove attendee-list emails                     | `DELETE /functions/v1/admin/user/remove`     | **admin** user token |
+| Read the announcement (editor)                  | `GET /functions/v1/admin/announcement/get`   | **admin** user token |
+| Save the announcement                           | `POST /functions/v1/admin/announcement/post` | **admin** user token |
+| Usage statistics                                | `GET /functions/v1/admin/stats`              | **admin** user token |
+| Create an agenda event                          | `POST /functions/v1/admin/agenda/create`     | **admin** user token |
+| Edit an agenda event                            | `POST /functions/v1/admin/agenda/update`     | **admin** user token |
+| Add a sponsor                                   | `POST /functions/v1/admin/sponsor/create`    | **admin** user token |
+| Edit a sponsor                                  | `POST /functions/v1/admin/sponsor/update`    | **admin** user token |
 
 Base URL:
 
@@ -102,12 +102,12 @@ POST /functions/v1/register
 }
 ```
 
-| Status | Body | Meaning |
-| --- | --- | --- |
-| 201 | `{ success: true, message }` | Account created — status and message only, no session or profile |
-| 403 | `{ success: false, email_in_stack: false, message }` | Email is not on the attendee list — nothing was created |
-| 409 | `{ success: false, email_in_stack: true, message }` | Already registered → send them to login |
-| 400 | `{ success: false, message }` | Missing/invalid field, password under 8 chars, no guilds or more than 3, or a bad `guild_ids` / `user_type_config_id` |
+| Status | Body                                                 | Meaning                                                                                                               |
+| ------ | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 201    | `{ success: true, message }`                         | Account created — status and message only, no session or profile                                                      |
+| 403    | `{ success: false, email_in_stack: false, message }` | Email is not on the attendee list — nothing was created                                                               |
+| 409    | `{ success: false, email_in_stack: true, message }`  | Already registered → send them to login                                                                               |
+| 400    | `{ success: false, message }`                        | Missing/invalid field, password under 8 chars, no guilds or more than 3, or a bad `guild_ids` / `user_type_config_id` |
 
 Registration returns no data of its own. The account is created already
 confirmed, so call `login` straight after a 201 to get the token and the
@@ -120,11 +120,11 @@ POST /functions/v1/login
 { "email": "wasim@simpalm.com", "password": "Passw0rd!23" }
 ```
 
-| Status | Body |
-| --- | --- |
-| 200 | `{ success: true, message, data: { token, token_type, expires_in, expires_at, refresh_token, user } }` |
-| 401 | `{ success: false, message: "Invalid email or password." }` |
-| 400 | `{ success: false, message }` — email or password missing |
+| Status | Body                                                                                                   |
+| ------ | ------------------------------------------------------------------------------------------------------ |
+| 200    | `{ success: true, message, data: { token, token_type, expires_in, expires_at, refresh_token, user } }` |
+| 401    | `{ success: false, message: "Invalid email or password." }`                                            |
+| 400    | `{ success: false, message }` — email or password missing                                              |
 
 Wrong password and unknown email both return the same 401 on purpose, so the
 endpoint can't be used to find out which emails have accounts.
@@ -201,16 +201,16 @@ examples are in [../../postman/API.md](../../postman/API.md#4-profile-and-attend
 The rest of the `user` function, all on the same envelope and all resolving the
 caller from the token:
 
-| Route | What it does |
-| --- | --- |
-| `GET user/profile/{id}` | Someone else's profile, plus `connection.status` (none / pending_sent / pending_received / connected / rejected) and `is_connected`. Their email is only included once connected |
-| `GET user/people` | Directory. `search` matches name, nerd number, company and job title in one term; `user_type` filters by type (`all` or a `configs.id`); `guild_id` narrows to one guild. Excludes the caller |
-| `POST user/connection/request` | `{ user_id }`. Asking someone who already asked you accepts their request instead |
-| `POST user/connection/respond` | `{ request_id \| user_id, action: "accept" \| "reject" }`. Only the person who received it can answer |
-| `GET user/connection/list` | `?status=pending` (default, your inbox), `sent`, `accepted` or `rejected`, with the same `search` |
-| `GET user/guild/list` | Every guild with `is_joined` for the caller, plus `joined_count` and `max_guilds` |
-| `POST user/guild/membership` | `{ guild_id, action: "join" \| "leave" }`. Refused at 3 guilds on join and at 1 on leave — the same 1..3 rule the profile enforces, backed by set_user_guilds() and the user_guilds_limit trigger |
-| `GET user/guild/members` | `?guild_id=` — the same cards as `user/people`, scoped to one guild |
+| Route                          | What it does                                                                                                                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET user/profile/{id}`        | Someone else's profile, plus `connection.status` (none / pending_sent / pending_received / connected / rejected) and `is_connected`. Their email is only included once connected                  |
+| `GET user/people`              | Directory. `search` matches name, nerd number, company and job title in one term; `user_type` filters by type (`all` or a `configs.id`); `guild_id` narrows to one guild. Excludes the caller     |
+| `POST user/connection/request` | `{ user_id }`. Asking someone who already asked you accepts their request instead                                                                                                                 |
+| `POST user/connection/respond` | `{ request_id \| user_id, action: "accept" \| "reject" }`. Only the person who received it can answer                                                                                             |
+| `GET user/connection/list`     | `?status=pending` (default, your inbox), `sent`, `accepted` or `rejected`, with the same `search`                                                                                                 |
+| `GET user/guild/list`          | Every guild with `is_joined` for the caller, plus `joined_count` and `max_guilds`                                                                                                                 |
+| `POST user/guild/membership`   | `{ guild_id, action: "join" \| "leave" }`. Refused at 3 guilds on join and at 1 on leave — the same 1..3 rule the profile enforces, backed by set_user_guilds() and the user_guilds_limit trigger |
+| `GET user/guild/members`       | `?guild_id=` — the same cards as `user/people`, scoped to one guild                                                                                                                               |
 
 `action` on the two merged routes can also be sent as `?action=...` on the query
 string, for a client that would rather keep it out of the body.
