@@ -1,20 +1,23 @@
 name: Sync GitHub to Bitbucket
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-  check-bitbucket:
+  sync-to-bitbucket:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check Bitbucket main
+      - name: Checkout GitHub repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Push to Bitbucket
         env:
           BITBUCKET_TOKEN: ${{ secrets.BITBUCKET_TOKEN }}
         run: |
-          echo "GitHub commit:"
-          echo "${{ github.sha }}"
-
-          echo ""
-          echo "Bitbucket main:"
-          git ls-remote "https://x-token-auth:${BITBUCKET_TOKEN}@bitbucket.org/Simpalm/fintechnerdcon-backend.git" refs/heads/main
+          git remote add bitbucket "https://x-token-auth:${BITBUCKET_TOKEN}@bitbucket.org/Simpalm/fintechnerdcon-backend.git"
+          git push --force bitbucket main
