@@ -1,0 +1,23 @@
+name: Sync GitHub to Bitbucket
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-to-bitbucket:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout GitHub repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Push to Bitbucket
+        env:
+          BITBUCKET_TOKEN: ${{ secrets.BITBUCKET_TOKEN }}
+        run: |
+          git remote add bitbucket "https://x-token-auth:${BITBUCKET_TOKEN}@bitbucket.org/Simpalm/fintechnerdcon-backend.git"
+          git push bitbucket main
