@@ -67,6 +67,11 @@ alter table public.agenda
 alter table public.agenda
   add column if not exists sponsor_name text null;
 
+-- Fix existing data: set is_sponsored = false for rows with missing sponsor_name
+update public.agenda
+set is_sponsored = false
+where is_sponsored = true and (sponsor_name is null or sponsor_name = '');
+
 -- Add constraint: sponsor_name required if is_sponsored = true
 do $$
 begin
