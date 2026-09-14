@@ -96,18 +96,33 @@ language plpgsql
 as $$
 declare
   speaker_count integer;
+  speakers_data jsonb;
 begin
-  -- speakers is a JSONB array, count the elements
-  speaker_count := jsonb_array_length(coalesce(new.speakers, '[]'::jsonb));
+  -- On insert, always validate. On update, only if speakers changed
+  if TG_OP = 'INSERT' or (new.speakers is distinct from old.speakers) then
+    -- Handle NULL speakers
+    if new.speakers is null then
+      speakers_data := '[]'::jsonb;
+    else
+      speakers_data := new.speakers;
+    end if;
 
-  if speaker_count < 1 then
-    raise exception 'Agenda must have at least 1 speaker.'
-      using errcode = 'P0001';
-  end if;
+    -- Safely count speakers, handling both array and scalar cases
+    if jsonb_typeof(speakers_data) = 'array' then
+      speaker_count := jsonb_array_length(speakers_data);
+    else
+      speaker_count := 0;
+    end if;
 
-  if speaker_count > 4 then
-    raise exception 'Agenda can have at most 4 speakers.'
-      using errcode = 'P0001';
+    if speaker_count < 1 then
+      raise exception 'Agenda must have at least 1 speaker.'
+        using errcode = 'P0001';
+    end if;
+
+    if speaker_count > 4 then
+      raise exception 'Agenda can have at most 4 speakers.'
+        using errcode = 'P0001';
+    end if;
   end if;
 
   return new;
