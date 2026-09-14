@@ -1225,7 +1225,7 @@ events is admin-side — see
 | --- | --- | --- |
 | `day` | `2026-09-01`, `9`, `all` | A date **or** a `configs.id` of type `event-day` |
 | `quest` | `main`, `side`, `bonus`, `4`, `all` | The Agenda screen's three sections |
-| `guild_id` | `3` | Filter by tag (guilds are the event tags — see below) |
+| `tag_id` | `3` | Filter by agenda tag (e.g., `Payments`, `Banking`, `AI`) |
 | `user_type` | `1` | Builder / Operator / Explorer, a `configs.id` of type `user_type` |
 | `search` | `stablecoin` | Matches name, speaker name, speaker company or location |
 | `saved` | `true` | Only what is on my schedule |
@@ -1263,11 +1263,9 @@ Events come back in chronological order (`day`, then `start_time`, then
         "event_day": { "id": 8, "name": "Day 1" },
         "stage": { "id": 11, "name": "Stage 1" },
         "tags": [
-          { "id": 4, "name": "Digital Currency & Stablecoins", "is_primary": true },
-          { "id": 3, "name": "Payments", "is_primary": false }
+          { "id": 3, "name": "Stablecoins", "is_primary": true },
+          { "id": 1, "name": "Payments", "is_primary": false }
         ],
-        "primary_tag": { "id": 4, "name": "Digital Currency & Stablecoins", "is_primary": true },
-        "secondary_tags": [{ "id": 3, "name": "Payments", "is_primary": false }],
         "user_types": [{ "id": 1, "name": "Builder" }],
         "is_past": false,
         "my_status": "saved",
@@ -1283,8 +1281,11 @@ Events come back in chronological order (`day`, then `start_time`, then
 
 - **`quest_section`** is `main` | `side` | `bonus` | `null` — the three sections of
   the screen. Bonus Quests are the offsite events.
-- **Tags** are `public.guilds` rows: at most two per event, one `is_primary`.
-  `primary_tag` and `secondary_tags` are the same list, pre-split.
+- **Tags** are from `public.tags` vocabulary: at most two per event, one marked `is_primary`.
+  Approved tags include: AI, Payments, Banking, Lending, Stablecoins, Crypto, Blockchain,
+  Embedded Finance, Open Banking, RegTech, Compliance, Fraud & Risk, Credit, Insurance,
+  Wealth Management, Digital Assets, Cross-Border, Emerging Markets, B2B Fintech, Consumer
+  Fintech, Infrastructure, Data & Analytics, Policy & Regulation, Investment & VC.
 - **`is_past`** is computed from `end_time` (falling back to `start_time`, then to
   the day being over). Past events are returned, not hidden — grey them out.
 - **`my_status`** is `null` | `saved` | `interested` | `approved` | `rejected`.
@@ -1386,8 +1387,9 @@ The same object as one element of `events` in §7.1. `404` if the id is unknown.
 `event_quest_config_id`, `event_day_config_id`, `stage_config_id`, `sort_order`,
 `status`, `created_at`.
 
-Tags are `agenda_guilds (agenda_id, guild_id, is_primary)` and audiences are
-`agenda_user_types (agenda_id, user_type_config_id)`.
+Tags are `agenda_tags (agenda_id, tag_id, is_primary)` and audiences are
+`agenda_user_types (agenda_id, user_type_config_id)`. Note: tags are separate from
+`public.guilds` — they come from `public.tags` vocabulary.
 
 > **Embedding `configs` from `agenda` is a trap.** `agenda` reaches `configs` by
 > **four** routes: the three direct FKs, plus a many-to-many through
@@ -1405,7 +1407,7 @@ Tags are `agenda_guilds (agenda_id, guild_id, is_primary)` and audiences are
 await supabase.from("agenda").select(`
   id, name, start_time, xp_value, location, status,
   quest:configs!agenda_event_quest_config_id_fkey(name),
-  agenda_guilds(is_primary, guilds(name))
+  agenda_tags(is_primary, tags(name))
 `).order("sort_order");
 ```
 
