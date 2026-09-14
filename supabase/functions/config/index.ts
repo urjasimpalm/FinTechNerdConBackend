@@ -1,12 +1,13 @@
 // GET config
 //   /functions/v1/config              → every lookup list in one payload
 //   /functions/v1/config/guilds       → guilds only
+//   /functions/v1/config/tags         → agenda tags only
 //   /functions/v1/config/sponsors     → the sponsor list
 //   /functions/v1/config/user_type    → one config type only
 //   /functions/v1/config?type=user_type,event-day
 //
 // Serves the reference data the app needs to render pickers and its static
-// screens: guilds, the sponsor list, and the public.configs rows grouped by their
+// screens: guilds, agenda tags, the sponsor list, and the public.configs rows grouped by their
 // type.
 //
 // Sponsors have to be *asked for* — they are absent from the bare `GET config`
@@ -24,11 +25,12 @@ import { likeTerm } from "../_shared/pagination.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const GUILDS_KEY = "guilds";
+const TAGS_KEY = "tags";
 const SPONSORS_KEY = "sponsors";
 
 // Real tables rather than configs.type values, so an empty result is a legitimate
 // answer for them and not the "unknown type" typo case below.
-const TABLE_KEYS = [GUILDS_KEY, SPONSORS_KEY];
+const TABLE_KEYS = [GUILDS_KEY, TAGS_KEY, SPONSORS_KEY];
 
 // Display order, then name as the tie-break — matching the sponsors_sort_idx in
 // 20260820200835_sponsors.sql, so paging or truncating the list is stable.
@@ -78,6 +80,7 @@ Deno.serve(async (req) => {
   try {
     const service = serviceClient();
     const wantsGuilds = requested.length === 0 || requested.includes(GUILDS_KEY);
+    const wantsTags = requested.length === 0 || requested.includes(TAGS_KEY);
     // Explicit request only — see the note at the top of this file.
     const wantsSponsors = requested.includes(SPONSORS_KEY);
     const configTypes = requested.filter((t) => !TABLE_KEYS.includes(t));
@@ -90,9 +93,12 @@ Deno.serve(async (req) => {
     );
     const sponsorSearch = url.searchParams.get("search")?.trim() || null;
 
-    const [guildsResult, configsResult, sponsorsResult] = await Promise.all([
+    const [guildsResult, tagsResult, configsResult, sponsorsResult] = await Promise.all([
       wantsGuilds
         ? service.from("guilds").select("id, name, description").order("id")
+        : Promise.resolve({ data: [], error: null }),
+      wantsTags
+        ? service.from("tags").select("id, name").order("id")
         : Promise.resolve({ data: [], error: null }),
       requested.length === 0 || configTypes.length > 0
         ? (() => {
@@ -123,10 +129,10 @@ Deno.serve(async (req) => {
         : Promise.resolve({ data: [], error: null }),
     ]);
 
-    if (guildsResult.error || configsResult.error || sponsorsResult.error) {
+    if (guildsResult.error || tagsResult.error || configsResult.error || sponsorsResult.error) {
       console.error(
         "config lookup failed",
-        guildsResult.error ?? configsResult.error ?? sponsorsResult.error,
+        guildsResult.error ?? tagsResult.error ?? configsResult.error ?? sponsorsResult.error,
       );
       return json(
         { success: false, message: "Something went wrong. Please try again." },
@@ -138,6 +144,7 @@ Deno.serve(async (req) => {
     // up here without a code change.
     const data: Record<string, unknown[]> = {};
     if (wantsGuilds) data[GUILDS_KEY] = guildsResult.data ?? [];
+    if (wantsTags) data[TAGS_KEY] = tagsResult.data ?? [];
     if (wantsSponsors) data[SPONSORS_KEY] = sponsorsResult.data ?? [];
     // description is carried through for every type so the shape is uniform;
     // only user_type has copy today, so it is null elsewhere.
