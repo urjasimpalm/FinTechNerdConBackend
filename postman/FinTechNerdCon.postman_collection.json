@@ -170,6 +170,12 @@
       "value": "",
       "description": "Set by 'Create a sponsor (admin)', and read by the update request next to it.",
       "type": "string"
+    },
+    {
+      "key": "speaker_id",
+      "value": "",
+      "description": "Set by 'Create a speaker (admin)', and read by the update and delete requests next to it.",
+      "type": "string"
     }
   ],
   "item": [
@@ -2682,7 +2688,7 @@
     },
     {
       "name": "9. Admin routes",
-      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post, GET admin/stats, POST admin/agenda/create, POST admin/agenda/update, POST admin/sponsor/create, POST admin/sponsor/update.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees; agenda/* and sponsor/* author the schedule and the sponsor list, which no app screen writes to \u2014 run each create before the update next to it, since it stashes the new id in a collection variable. See postman/API.md \u00a711.7 and \u00a711.8.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth \u2192 Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
+      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post, GET admin/stats, POST admin/agenda/create, POST admin/agenda/update, GET admin/speakers/list, POST admin/speakers/create, POST admin/speakers/update/{id}, DELETE admin/speakers/delete/{id}, POST admin/sponsor/create, POST admin/sponsor/update.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees; agenda/* and sponsor/* author the schedule and the sponsor list; speakers/* manages speaker profiles used in agenda events \u2014 all no app screen writes to. Run each create before the update next to it, since it stashes the new id in a collection variable. See postman/API.md \u00a77, \u00a78, and \u00a711.8.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth \u2192 Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
       "item": [
         {
           "name": "List attendee emails",
@@ -3145,6 +3151,217 @@
                   "  });",
                   "} else {",
                   "  console.log('admin route:', pm.response.code, body.message, '- run Create an agenda event first, as a user with is_admin = true.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List speakers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/speakers/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "speakers",
+                "list"
+              ]
+            },
+            "description": "Returns all speakers in the system, sorted by creation date (newest first). **Admin only.**\n\n- **200** `data: { speakers: [...] }` where each speaker has `id`, `name`, `title`, `company`, `bio`, `linkedin`, `status`, `role`, `created_at`, `updated_at`\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 401, 403]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('speakers list', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.speakers).to.be.an('array');",
+                  "    body.data.speakers.forEach(s => {",
+                  "      pm.expect(s.id).to.be.a('string');",
+                  "      pm.expect(s.name).to.be.a('string');",
+                  "    });",
+                  "  });",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create a speaker",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/speakers/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "speakers",
+                "create"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ada Lovelace\",\n  \"title\": \"Chief Software Architect\",\n  \"company\": \"Analytical Engines\",\n  \"bio\": \"Pioneer in computer science and mathematics.\",\n  \"linkedin\": \"https://linkedin.com/in/adalovelace\",\n  \"status\": \"confirmed\",\n  \"role\": \"speaker\"\n}"
+            },
+            "description": "Creates a new speaker. Only `name` is required; other fields are optional. **Admin only.**\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| name | string | **yes** | Speaker name, cannot be empty |\n| title | string | no | Job title or role |\n| company | string | no | Company name |\n| bio | string | no | Short biography |\n| linkedin | string | no | LinkedIn profile URL |\n| status | string | no | Default `confirmed`. Other values: `pending`, `declined`, etc. |\n| role | string | no | Default `speaker`. Other values: `moderator`, `panelist`, etc. |\n\nA speaker id is auto-generated if not provided (`speaker_<timestamp>_<random>`).\n\n- **200** `data: { speaker: {...} }` with all fields including `id`, `created_at`, `updated_at`\n- **400** a validation failure, naming the field\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('created', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.speaker.id).to.be.a('string');",
+                  "    pm.expect(body.data.speaker.name).to.eql('Ada Lovelace');",
+                  "    pm.expect(body.data.speaker.status).to.eql('confirmed');",
+                  "    pm.expect(body.data.speaker.role).to.eql('speaker');",
+                  "  });",
+                  "  pm.collectionVariables.set('speaker_id', body.data.speaker.id);",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update a speaker",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/speakers/update/{{speaker_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "speakers",
+                "update",
+                "{{speaker_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ada Lovelace (edited)\",\n  \"title\": \"Chief Scientist\",\n  \"company\": \"Analytical Engines Inc.\",\n  \"bio\": \"Pioneer in computer science, mathematics, and logic.\",\n  \"linkedin\": \"https://linkedin.com/in/adalovelace\",\n  \"status\": \"confirmed\",\n  \"role\": \"keynote\"\n}"
+            },
+            "description": "Updates an existing speaker. **Admin only.** Takes the speaker id from **Create a speaker** above (`{{speaker_id}}`).\n\n**Every field can be edited** — the body below sends all of them, so delete the lines that should stay as they are. It is a patch: only the keys present are written, absent keys are left alone.\n\nSame field table as create:\n\n| Parameter | Type | Required | Notes |\n| --- | --- | --- | --- |\n| name | string | yes | Speaker name, cannot be empty |\n| title | string | no | Job title or role |\n| company | string | no | Company name |\n| bio | string | no | Short biography |\n| linkedin | string | no | LinkedIn profile URL |\n| status | string | no | Default `confirmed` |\n| role | string | no | Default `speaker` |\n\n- **200** `data: { speaker: {...} }` with all fields including `updated_at`\n- **400** a validation failure, naming the field\n- **404** no speaker with that id\n- **401 / 403** as above"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403, 404]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('updated', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.speaker.name).to.eql('Ada Lovelace (edited)');",
+                  "    pm.expect(body.data.speaker.role).to.eql('keynote');",
+                  "  });",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- run Create a speaker first, as a user with is_admin = true.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete a speaker",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/speakers/delete/{{speaker_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "speakers",
+                "delete",
+                "{{speaker_id}}"
+              ]
+            },
+            "description": "Deletes a speaker. **Admin only.** Takes the speaker id from **Create a speaker** above (`{{speaker_id}}`).\n\n- **200** `data: { speaker_id: \"...\" }` confirming the deletion\n- **404** no speaker with that id\n- **401 / 403** as above"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 401, 403, 404]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('deleted', () => {",
+                  "    pm.expect(body.status).to.eql('Success');",
+                  "    pm.expect(body.data.speaker_id).to.be.a('string');",
+                  "  });",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- run Create a speaker first, as a user with is_admin = true.');",
                   "}"
                 ]
               }

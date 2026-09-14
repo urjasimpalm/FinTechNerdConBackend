@@ -8,6 +8,10 @@
 //   GET    /functions/v1/admin/stats              usage statistics + per-event list
 //   POST   /functions/v1/admin/agenda/create      { "name": "...", ... }
 //   POST   /functions/v1/admin/agenda/update      { "id": "...", ...fields }
+//   GET    /functions/v1/admin/speakers/list
+//   POST   /functions/v1/admin/speakers/create    { "name": "...", ... }
+//   POST   /functions/v1/admin/speakers/update/{id}  { "name": "...", ... }
+//   DELETE /functions/v1/admin/speakers/delete/{id}
 //   POST   /functions/v1/admin/sponsor/create     name + logo (multipart or JSON)
 //   POST   /functions/v1/admin/sponsor/update     id + whatever is changing
 //
@@ -31,6 +35,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { fail, integer, ok, readJson, text } from "../_shared/http.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 import { createEvent, updateEvent } from "./agenda.ts";
+import { listSpeakers, createSpeaker, updateSpeaker, deleteSpeaker } from "./speakers.ts";
 import { createSponsor, updateSponsor } from "./sponsor.ts";
 import { getStats } from "./stats.ts";
 
@@ -48,6 +53,10 @@ const ROUTES: Record<string, string> = {
   "stats": "GET",
   "agenda/create": "POST",
   "agenda/update": "POST",
+  "speakers/list": "GET",
+  "speakers/create": "POST",
+  "speakers/update": "POST",
+  "speakers/delete": "DELETE",
   "sponsor/create": "POST",
   "sponsor/update": "POST",
 };
@@ -363,7 +372,16 @@ Deno.serve(async (req) => {
   const nameAt = parts.indexOf("admin");
   const route = nameAt >= 0 ? parts.slice(nameAt + 1).join("/") : "";
 
-  const expectedMethod = ROUTES[route];
+  // Resolve the expected method, handling dynamic routes like speakers/update/{id}
+  let expectedMethod = ROUTES[route];
+  if (!expectedMethod) {
+    if (route.startsWith("speakers/update/")) {
+      expectedMethod = ROUTES["speakers/update"];
+    } else if (route.startsWith("speakers/delete/")) {
+      expectedMethod = ROUTES["speakers/delete"];
+    }
+  }
+
   if (!expectedMethod) {
     return fail(
       `Unknown admin route "${route}". Available: ${
@@ -384,6 +402,7 @@ Deno.serve(async (req) => {
     if (route === "user/list") return await listUsers(url);
     if (route === "announcement/get") return await getAnnouncement();
     if (route === "stats") return await getStats(url);
+    if (route === "speakers/list") return await listSpeakers();
 
     // The sponsor routes take the request itself, not a parsed body: the logo can
     // arrive as a multipart file, and reading the body as JSON here would consume
@@ -399,6 +418,17 @@ Deno.serve(async (req) => {
     }
     if (route === "agenda/create") return await createEvent(body);
     if (route === "agenda/update") return await updateEvent(body);
+    if (route === "speakers/create") return await createSpeaker(body);
+
+    // Handle speakers/update and speakers/delete with dynamic IDs
+    if (route.startsWith("speakers/update/")) {
+      const speakerId = route.slice("speakers/update/".length);
+      return await updateSpeaker(speakerId, body);
+    }
+    if (route.startsWith("speakers/delete/")) {
+      const speakerId = route.slice("speakers/delete/".length);
+      return await deleteSpeaker(speakerId);
+    }
 
     const parsed = readEntries(body);
     if ("error" in parsed) return fail(parsed.error, 400);

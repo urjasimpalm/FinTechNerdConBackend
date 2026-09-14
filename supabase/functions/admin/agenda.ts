@@ -165,6 +165,93 @@ function readTimestamp(
 /** One tag: a tag, and whether it is the event's primary one. */
 type Tag = { tag_id: number; is_primary: boolean };
 
+/** Speaker in JSON array */
+type Speaker = {
+  id: string;
+  name: string;
+  title?: string | null;
+  company?: string | null;
+};
+
+const MAX_SPEAKERS = 4;
+const MIN_SPEAKERS = 1;
+
+/**
+ * Reads and validates speakers array (1-4 speakers).
+ */
+function readSpeakers(body: Row): { speakers: Speaker[] } | { error: string } {
+  const raw: unknown[] = Array.isArray(body.speakers)
+    ? [...body.speakers]
+    : body.speakers !== undefined && body.speakers !== null
+    ? [body.speakers]
+    : [];
+
+  if (raw.length < MIN_SPEAKERS) {
+    return { error: `At least ${MIN_SPEAKERS} speaker is required.` };
+  }
+
+  if (raw.length > MAX_SPEAKERS) {
+    return { error: `At most ${MAX_SPEAKERS} speakers allowed.` };
+  }
+
+  const speakers: Speaker[] = [];
+  const seenIds = new Set<string>();
+
+  for (const [index, item] of raw.entries()) {
+    const speaker = item !== null && typeof item === "object" && !Array.isArray(item)
+      ? (item as Record<string, unknown>)
+      : item;
+
+    if (typeof speaker !== "object" || !speaker) {
+      return { error: `speakers[${index}]: must be an object.` };
+    }
+
+    const speakerObj = speaker as Record<string, unknown>;
+    const id = text(speakerObj.id);
+    if (!id) {
+      return { error: `speakers[${index}].id: is required.` };
+    }
+
+    if (seenIds.has(id)) {
+      return { error: `speakers[${index}]: duplicate speaker id "${id}".` };
+    }
+
+    const name = text(speakerObj.name);
+    if (!name) {
+      return { error: `speakers[${index}].name: is required.` };
+    }
+
+    seenIds.add(id);
+    speakers.push({
+      id,
+      name,
+      title: speakerObj.title ? text(speakerObj.title) : null,
+      company: speakerObj.company ? text(speakerObj.company) : null,
+    });
+  }
+
+  return { speakers };
+}
+
+/**
+ * Reads and validates sponsor fields.
+ */
+function readSponsors(
+  body: Row,
+): { isSponsored: boolean; sponsorName: string | null } | { error: string } {
+  const isSponsored = body.is_sponsored === true;
+  const rawName = body.sponsor_name ? text(body.sponsor_name) : null;
+  const sponsorName = rawName?.trim() || null;
+
+  if (isSponsored && !sponsorName) {
+    return {
+      error: '"sponsor_name" is required when is_sponsored is true.',
+    };
+  }
+
+  return { isSponsored, sponsorName };
+}
+
 /**
  * Reads the tags.
  *
@@ -385,6 +472,16 @@ function readColumns(
     row[key] = parsed.value;
   }
 
+  if ("sponsor_name" in body) {
+    if (body.sponsor_name === null) {
+      row.sponsor_name = null;
+    } else {
+      const name = text(body.sponsor_name);
+      if (!name) return { error: '"sponsor_name" must be a non-empty string, or null.' };
+      row.sponsor_name = name;
+    }
+  }
+
   return { row };
 }
 
@@ -452,12 +549,29 @@ async function describe(row: Row, vocab: Vocabulary, message: string): Promise<R
     }))
     .sort((a, b) => (a.is_primary === b.is_primary ? 0 : a.is_primary ? -1 : 1));
 
+  // Parse speakers from JSONB if present
+  let speakers: unknown[] = [];
+  if (row.speakers) {
+    try {
+      speakers = typeof row.speakers === "string"
+        ? JSON.parse(row.speakers)
+        : Array.isArray(row.speakers)
+        ? row.speakers
+        : [];
+    } catch {
+      speakers = [];
+    }
+  }
+
   return ok(message, {
     ...row,
     quest: named(row.event_quest_config_id),
     event_day: named(row.event_day_config_id),
     stage: named(row.stage_config_id),
     tags,
+    speakers,
+    is_sponsored: row.is_sponsored ?? false,
+    sponsor_name: row.sponsor_name ?? null,
     user_types: (audienceLinks.data ?? [])
       .map((link) => named(link.user_type_config_id))
       .filter(Boolean),
@@ -574,16 +688,30 @@ export async function createEvent(body: Row): Promise<Response> {
   const clash = timesAgree(columns.row, null);
   if (clash) return fail(clash, 400);
 
+  const speakers = readSpeakers(body);
+  if ("error" in speakers) return fail(speakers.error, 400);
+
+  const sponsors = readSponsors(body);
+  if ("error" in sponsors) return fail(sponsors.error, 400);
+
   const tags = readTags(body, vocab);
   if ("error" in tags) return fail(tags.error, 400);
 
   const userTypes = readUserTypes(body, vocab);
   if ("error" in userTypes) return fail(userTypes.error, 400);
 
+  // Add speakers and sponsors to the row
+  const rowWithExtras = {
+    ...columns.row,
+    speakers: JSON.stringify(speakers.speakers),
+    is_sponsored: sponsors.isSponsored,
+    sponsor_name: sponsors.sponsorName,
+  };
+
   const service = serviceClient();
   const { data: created, error } = await service
     .from("agenda")
-    .insert(columns.row)
+    .insert(rowWithExtras)
     .select(EVENT_SELECT)
     .single();
 
@@ -631,6 +759,13 @@ export async function updateEvent(body: Row): Promise<Response> {
   const columns = readColumns(body, vocab, false);
   if ("error" in columns) return fail(columns.error, 400);
 
+  const speakers = "speakers" in body ? readSpeakers(body) : null;
+  if (speakers && "error" in speakers) return fail(speakers.error, 400);
+
+  const sponsors =
+    "is_sponsored" in body || "sponsor_name" in body ? readSponsors(body) : null;
+  if (sponsors && "error" in sponsors) return fail(sponsors.error, 400);
+
   const touchesTags = TAG_KEYS.some((key) => key in body);
   const touchesAudiences = AUDIENCE_KEYS.some((key) => key in body);
 
@@ -657,10 +792,19 @@ export async function updateEvent(body: Row): Promise<Response> {
   if (clash) return fail(clash, 400);
 
   let current: Row = existing.data;
-  if (Object.keys(columns.row).length > 0) {
+  const rowToUpdate = { ...columns.row };
+  if (speakers && "speakers" in speakers) {
+    rowToUpdate.speakers = JSON.stringify(speakers.speakers);
+  }
+  if (sponsors) {
+    rowToUpdate.is_sponsored = sponsors.isSponsored;
+    rowToUpdate.sponsor_name = sponsors.sponsorName;
+  }
+
+  if (Object.keys(rowToUpdate).length > 0) {
     const { data, error } = await service
       .from("agenda")
-      .update(columns.row)
+      .update(rowToUpdate)
       .eq("id", agendaId)
       .select(EVENT_SELECT)
       .single();

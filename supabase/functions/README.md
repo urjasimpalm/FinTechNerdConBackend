@@ -31,6 +31,10 @@ chat, missions, notifications — see [../../postman/API.md](../../postman/API.m
 | Read the announcement (editor)                  | `GET /functions/v1/admin/announcement/get`   | **admin** user token |
 | Save the announcement                           | `POST /functions/v1/admin/announcement/post` | **admin** user token |
 | Usage statistics                                | `GET /functions/v1/admin/stats`              | **admin** user token |
+| List all speakers                               | `GET /functions/v1/admin/speakers`           | **admin** user token |
+| Create a speaker                                | `POST /functions/v1/admin/speakers`          | **admin** user token |
+| Update a speaker                                | `PUT /functions/v1/admin/speakers/{id}`      | **admin** user token |
+| Delete a speaker                                | `DELETE /functions/v1/admin/speakers/{id}`   | **admin** user token |
 | Create an agenda event                          | `POST /functions/v1/admin/agenda/create`     | **admin** user token |
 | Edit an agenda event                            | `POST /functions/v1/admin/agenda/update`     | **admin** user token |
 | Add a sponsor                                   | `POST /functions/v1/admin/sponsor/create`    | **admin** user token |
@@ -259,6 +263,168 @@ not read their own rows back.
 
 New messages arriving while a screen is open still come over realtime on
 `chat_messages`; these endpoints are for loading and sending.
+
+## 9. Speakers
+
+Speakers are reusable profiles assigned to agenda events. Each speaker profile includes:
+- `id`: unique speaker identifier
+- `name`: speaker name (required)
+- `title`: job title or role (optional)
+- `company`: company or organization (optional)
+- `bio`: biography (optional)
+- `linkedin`: LinkedIn profile URL (optional)
+- `status`: confirmed/pending/declined (default: confirmed)
+- `role`: speaker role type (default: speaker)
+
+### List all speakers
+
+```
+GET /functions/v1/admin/speakers
+```
+
+Returns all speakers ordered by most recent first.
+
+### Create a speaker
+
+```
+POST /functions/v1/admin/speakers
+{
+  "name": "John Doe",
+  "title": "CEO",
+  "company": "ABC Technologies",
+  "bio": "Experienced fintech leader...",
+  "linkedin": "https://linkedin.com/in/johndoe",
+  "status": "confirmed"
+}
+```
+
+| Status | Body | Meaning |
+| --- | --- | --- |
+| 200 | speaker object | Speaker created successfully |
+| 400 | error message | Missing/invalid fields (name is required) |
+| 409 | error message | Speaker ID already exists |
+
+### Update a speaker
+
+```
+PUT /functions/v1/admin/speakers/{id}
+{
+  "name": "John Doe",
+  "title": "VP Banking",
+  "company": "XYZ Bank"
+}
+```
+
+| Status | Body | Meaning |
+| --- | --- | --- |
+| 200 | updated speaker | Speaker updated successfully |
+| 400 | error message | Invalid field values |
+| 404 | error message | Speaker not found |
+
+### Delete a speaker
+
+```
+DELETE /functions/v1/admin/speakers/{id}
+```
+
+| Status | Meaning |
+| --- | --- |
+| 200 | Speaker deleted successfully |
+| 404 | Speaker not found |
+
+## 10. Agenda with Speakers and Sponsors
+
+### Create agenda with speakers
+
+When creating an agenda event, include `speakers` array (1-4 speakers) and sponsor information:
+
+```
+POST /functions/v1/admin/agenda/create
+{
+  "name": "Future of Banking",
+  "description": "...",
+  "speakers": [
+    {
+      "id": "speaker-001",
+      "name": "John Doe",
+      "title": "CEO",
+      "company": "ABC Technologies"
+    }
+  ],
+  "is_sponsored": true,
+  "sponsor_name": "ABC Technologies"
+}
+```
+
+### Speakers validation
+
+- **Minimum**: 1 speaker (required)
+- **Maximum**: 4 speakers
+- **Speaker ID**: must exist in the `speakers` table
+- **Duplicate speakers**: not allowed in same agenda
+
+Errors:
+```
+"At least 1 speaker is required."
+"At most 4 speakers allowed."
+"speakers[0].id: is required."
+"speakers[0]: duplicate speaker id \"speaker-001\"."
+```
+
+### Sponsor validation
+
+- **If `is_sponsored = true`**: `sponsor_name` must not be empty
+- **If `is_sponsored = false`**: `sponsor_name` can be null/empty
+
+Valid sponsorships:
+```json
+{
+  "is_sponsored": true,
+  "sponsor_name": "ABC Technologies"
+}
+```
+
+Invalid sponsorships:
+```json
+{
+  "is_sponsored": true,
+  "sponsor_name": ""
+}
+```
+
+```json
+{
+  "is_sponsored": true,
+  "sponsor_name": null
+}
+```
+
+Error:
+```
+"\"sponsor_name\" is required when is_sponsored is true."
+```
+
+### Agenda API response
+
+All agenda responses include speakers and sponsor information:
+
+```json
+{
+  "id": "event-123",
+  "name": "Future of Banking",
+  "speakers": [
+    {
+      "id": "speaker-001",
+      "name": "John Doe",
+      "title": "CEO",
+      "company": "ABC Technologies"
+    }
+  ],
+  "is_sponsored": true,
+  "sponsor_name": "ABC Technologies",
+  "...other agenda fields..."
+}
+```
 
 ---
 

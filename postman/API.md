@@ -1209,11 +1209,70 @@ Read-only. `missions` (catalog: `id`, `code`, `title`, `description`, `points`,
 
 ---
 
-## 7. Agenda
+## 7. Speakers
+
+Speakers are reusable profiles that can be assigned to multiple agenda events.
+
+### List speakers
+
+```
+GET /functions/v1/admin/speakers
+```
+
+Returns all speakers, newest first.
+
+### Create a speaker
+
+```
+POST /functions/v1/admin/speakers
+{
+  "name": "John Doe",
+  "title": "CEO",
+  "company": "ABC Technologies",
+  "bio": "Experienced fintech leader",
+  "linkedin": "https://linkedin.com/in/johndoe"
+}
+```
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| name | string | yes | Speaker name |
+| title | string | no | Job title |
+| company | string | no | Company name |
+| bio | string | no | Biography |
+| linkedin | string | no | LinkedIn profile URL |
+| status | string | no | confirmed/pending/declined |
+| role | string | no | Speaker role type |
+
+Response: `{ speaker: { id, name, title, company, ... } }`
+
+### Update a speaker
+
+```
+PUT /functions/v1/admin/speakers/{id}
+{ "title": "VP Banking", ... }
+```
+
+Only present fields are updated.
+
+### Delete a speaker
+
+```
+DELETE /functions/v1/admin/speakers/{id}
+```
+
+---
+
+## 8. Agenda
 
 Five routes on the `user` function. Every event carries the caller's own state, so
 a list screen can draw the `+` / checkmark button and grey out past events without
 a second call.
+
+**New fields:**
+- `speakers`: Array of speaker objects (min 1, max 4)
+- `is_sponsored`: Boolean (default false)
+- `sponsor_name`: String, required if is_sponsored=true
 
 All five are read-only apart from the caller's own schedule. Creating and editing
 events is admin-side — see
@@ -1904,9 +1963,10 @@ Authoring events. Nothing in the app calls these — the app only ever *reads* t
 agenda — so they are back-office routes, in Postman under **9. Admin routes**
 rather than beside the Agenda flow.
 
-One event spans three tables, and both routes write all three in one call:
-`public.agenda`, its tags in `public.agenda_guilds`, and its
-Builder/Operator/Explorer audiences in `public.agenda_user_types`.
+One event spans multiple tables, and both routes write all in one call:
+`public.agenda` (main event), `public.agenda_tags` (agenda tags),
+`public.agenda_guilds` (agenda speakers mapping), and `public.agenda_user_types`
+(Builder/Operator/Explorer audiences).
 
 **Only `name` is required.** The agenda is authored in passes — times and stages
 get assigned after the sessions exist — so an event with nothing but a name is a
@@ -1919,18 +1979,20 @@ legitimate draft.
 | `day` | date | `YYYY-MM-DD` |
 | `start_time`, `end_time` | timestamp | ISO 8601 **with a zone** — `2026-09-15T15:00:00Z`, or an offset like `-05:00`. A bare `2026-09-15 09:00` is a 400, because it would be read in the server's zone. `end_time` must be after `start_time` |
 | `speaker_name`, `speaker_title`, `speaker_company` | string | — |
+| `speakers` | array | Array of speaker objects: `[{"id": "speaker-001", "name": "John Doe", "title": "CEO", "company": "ABC"}]`. Min 1, max 4 speakers. Speaker `id` must exist in `speakers` table |
 | `location` | string | Free text, e.g. `Main Hall` |
 | `event_quest_config_id` | integer | `configs` row of type `event-quest` — `Main Quests`, `Side Quests`, `Bonus Quests`. Short alias: `quest` |
 | `event_day_config_id` | integer | `configs` row of type `event-day` — `Day 0`, `Day 1`, `Day 2`. Short alias: `event_day` |
 | `stage_config_id` | integer | `configs` row of type `stage-type` — `Stage 1`–`Stage 4`. Short alias: `stage` |
 | `xp_value` | integer | XP for checking in with the session's QR code ([§6.5](#65-how-xp-is-earned)), not for saving it. Default 0 |
 | `capacity` | integer | 1 or more, or `null` for no limit |
-| `is_sponsored` | boolean | Default `false` |
+| `is_sponsored` | boolean | Default `false`. If `true`, `sponsor_name` is required |
+| `sponsor_name` | string | Sponsor name/company. Required if `is_sponsored = true`. `null` clears it |
 | `is_invite_only` | boolean | Default `false`. When `true` the app offers "express interest" instead of add-to-schedule ([§7.4](#74-post-useragendaschedule--add-remove-or-ask)) |
 | `sort_order` | integer | Breaks ties between events starting at the same moment, and orders events with no time at all. Default 0 |
 | `status` | string | Default `scheduled` |
-| `tags` | array | Up to **2** `guilds` ids. Items may also be `{ "guild_id": 3, "is_primary": true }` |
-| `primary_tag` | integer | The primary tag's `guilds` id. A single tag with no flag *is* the primary one, so the common case needs no flag |
+| `tags` | array | Up to **2** agenda tags. Items may be tag ids, names, or `{ "tag_id": 3, "is_primary": true }` |
+| `primary_tag` | integer/string | The primary tag's id or name. A single tag with no flag *is* the primary one |
 | `user_types` | array | `configs` ids of type `user_type` — `1` Builder, `2` Operator, `3` Explorer. `audiences` is accepted as an alias |
 
 **Read the ids from [`GET config`](#5-config--reference-data) for the project you
@@ -1956,8 +2018,18 @@ const { data } = await supabase.functions.invoke("admin/agenda/create", {
     event_day_config_id: 9,        // Day 1
     stage_config_id: 11,           // Stage 1
     xp_value: 50,
-    primary_tag: 4,                // guild: Digital Currency & Stablecoins
-    tags: [3],                     // guild: Payments
+    speakers: [
+      {
+        id: "speaker-001",
+        name: "John Doe",
+        title: "CEO",
+        company: "ABC Technologies"
+      }
+    ],
+    is_sponsored: true,
+    sponsor_name: "ABC Technologies",
+    primary_tag: "Stablecoins",    // Agenda tag name
+    tags: ["Payments"],            // Agenda tag name
     user_types: [1, 2],            // Builder, Operator
   },
 });
@@ -1978,14 +2050,30 @@ const { data } = await supabase.functions.invoke("admin/agenda/create", {
     "event_day": { "id": 9, "name": "Day 1" },
     "stage": { "id": 11, "name": "Stage 1" },
     "tags": [
-      { "id": 4, "name": "Digital Currency & Stablecoins", "is_primary": true },
+      { "id": 4, "name": "Stablecoins", "is_primary": true },
       { "id": 3, "name": "Payments", "is_primary": false }
     ],
-    "primary_tag": { "id": 4, "name": "Digital Currency & Stablecoins", "is_primary": true },
+    "speakers": [
+      {
+        "id": "speaker-001",
+        "name": "John Doe",
+        "title": "CEO",
+        "company": "ABC Technologies"
+      }
+    ],
+    "is_sponsored": true,
+    "sponsor_name": "ABC Technologies",
     "user_types": [{ "id": 1, "name": "Builder" }, { "id": 2, "name": "Operator" }]
   }
 }
 ```
+
+**Validation errors:**
+
+- `400` — `"At least 1 speaker is required."` (min 1 speaker)
+- `400` — `"At most 4 speakers allowed."` (max 4 speakers)
+- `400` — `"\"sponsor_name\" is required when is_sponsored is true."` (sponsor validation)
+- `400` — Missing/invalid fields
 
 `data` is read back from the join tables rather than echoed from the request, so
 it is what was actually stored. Feed `data.id` straight into

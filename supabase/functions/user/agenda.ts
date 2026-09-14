@@ -142,6 +142,20 @@ function shapeEvent(
     ? Date.parse(`${day}T23:59:59Z`) < now
     : false;
 
+  // Parse speakers from JSONB if present
+  let speakers: unknown[] = [];
+  if (row.speakers) {
+    try {
+      speakers = typeof row.speakers === "string"
+        ? JSON.parse(row.speakers)
+        : Array.isArray(row.speakers)
+        ? row.speakers
+        : [];
+    } catch {
+      speakers = [];
+    }
+  }
+
   return {
     ...row,
     quest,
@@ -149,6 +163,9 @@ function shapeEvent(
     stage,
     quest_section: questSection(quest?.name),
     tags,
+    speakers,
+    is_sponsored: row.is_sponsored ?? false,
+    sponsor_name: row.sponsor_name ?? null,
     user_types: lookups.audiences.get(id) ?? [],
     is_past: isPast,
     my_status: state.status,
