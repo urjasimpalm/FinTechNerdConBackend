@@ -7,10 +7,10 @@
 // user/agenda.ts) — so they exist for whoever is loading the schedule in from
 // Postman or a back-office screen. They are edge routes rather than direct REST
 // writes because one event is three tables: public.agenda, its tags in
-// public.agenda_guilds, and its Builder/Operator/Explorer audiences in
+// public.agenda_tags, and its Builder/Operator/Explorer audiences in
 // public.agenda_user_types.
 //
-// Every reference to public.configs or public.guilds may be given as an id or as
+// Every reference to public.configs or public.tags may be given as an id or as
 // a name ("Main Quests", "Day 1", "AI"). Names are the useful form here: configs
 // ids come from one shared sequence and differ between environments, which is the
 // same reason public.award_agenda_mission() and questSection() in user/agenda.ts
@@ -42,24 +42,24 @@ const AUDIENCE_KEYS = ["user_types", "audiences"];
 type Row = Record<string, unknown>;
 type Named = { id: number; name: string };
 
-/** public.configs and public.guilds, whole. A dozen-odd rows each. */
+/** public.configs and public.tags, whole. A dozen-odd rows each. */
 type Vocabulary = {
   configs: { id: number; name: string; type: string }[];
-  guilds: Named[];
+  tags: Named[];
 };
 
 async function loadVocabulary(): Promise<Vocabulary> {
   const service = serviceClient();
-  const [configs, guilds] = await Promise.all([
+  const [configs, tags] = await Promise.all([
     service.from("configs").select("id, name, type"),
-    service.from("guilds").select("id, name"),
+    service.from("tags").select("id, name"),
   ]);
   if (configs.error) throw configs.error;
-  if (guilds.error) throw guilds.error;
+  if (tags.error) throw tags.error;
 
   return {
     configs: (configs.data ?? []) as Vocabulary["configs"],
-    guilds: (guilds.data ?? []) as Named[],
+    tags: (tags.data ?? []) as Named[],
   };
 }
 
@@ -114,26 +114,26 @@ function resolveConfig(
   return { id: match.id };
 }
 
-/** A guilds.id from either an id or a name — the tag vocabulary. */
-function resolveGuild(
+/** A tags.id from either an id or a name — the tag vocabulary. */
+function resolveTag(
   vocab: Vocabulary,
   value: unknown,
   field: string,
 ): { id: number } | { error: string } {
   const asId = integer(value);
   if (asId !== null) {
-    const match = vocab.guilds.find((guild) => guild.id === asId);
+    const match = vocab.tags.find((tag) => tag.id === asId);
     return match
       ? { id: asId }
-      : { error: `${field}: there is no guild with id ${asId}.` };
+      : { error: `${field}: there is no tag with id ${asId}.` };
   }
 
   const name = text(value);
-  if (!name) return { error: `${field} must be a guilds.id or a guild name.` };
-  const match = vocab.guilds.find((guild) =>
-    guild.name.toLowerCase() === name.toLowerCase()
+  if (!name) return { error: `${field} must be a tags.id or a tag name.` };
+  const match = vocab.tags.find((tag) =>
+    tag.name.toLowerCase() === name.toLowerCase()
   );
-  return match ? { id: match.id } : { error: `${field}: "${name}" is not a guild.` };
+  return match ? { id: match.id } : { error: `${field}: "${name}" is not a tag.` };
 }
 
 /**
@@ -162,18 +162,18 @@ function readTimestamp(
   return { value: new Date(parsed).toISOString() };
 }
 
-/** One tag: a guild, and whether it is the event's primary one. */
-type Tag = { guild_id: number; is_primary: boolean };
+/** One tag: a tag, and whether it is the event's primary one. */
+type Tag = { tag_id: number; is_primary: boolean };
 
 /**
  * Reads the tags.
  *
- * `tags` items may be a guilds.id, a guild name, or { guild_id | tag, is_primary }.
+ * `tags` items may be a tags.id, a tag name, or { tag_id | tag, is_primary }.
  * `primary_tag` names the primary one separately, which is the shape a form with
  * two pickers produces. The first tag is the primary one when nothing says
  * otherwise, so the common single-tag case needs no flag — see
- * agenda_guilds_one_primary and enforce_agenda_tag_limit() in
- * 20260822000001_agenda_frd.sql for the rules this has to satisfy.
+ * agenda_tags_one_primary and enforce_agenda_tags_limit() in
+ * 20260914000001_agenda_tags_refactor.sql for the rules this has to satisfy.
  */
 function readTags(body: Row, vocab: Vocabulary): { tags: Tag[] } | { error: string } {
   const raw: unknown[] = Array.isArray(body.tags)
@@ -185,16 +185,16 @@ function readTags(body: Row, vocab: Vocabulary): { tags: Tag[] } | { error: stri
   const tags: Tag[] = [];
   const seen = new Set<number>();
 
-  const add = (guildId: number, isPrimary: boolean) => {
-    if (seen.has(guildId)) return;
-    seen.add(guildId);
-    tags.push({ guild_id: guildId, is_primary: isPrimary });
+  const add = (tagId: number, isPrimary: boolean) => {
+    if (seen.has(tagId)) return;
+    seen.add(tagId);
+    tags.push({ tag_id: tagId, is_primary: isPrimary });
   };
 
   // Named primary first, so it stays the primary one whether or not it also
   // appears in `tags`.
   if (body.primary_tag !== undefined && body.primary_tag !== null) {
-    const resolved = resolveGuild(vocab, body.primary_tag, "primary_tag");
+    const resolved = resolveTag(vocab, body.primary_tag, "primary_tag");
     if ("error" in resolved) return resolved;
     add(resolved.id, true);
   }
@@ -205,8 +205,8 @@ function readTags(body: Row, vocab: Vocabulary): { tags: Tag[] } | { error: stri
       ? item as Row
       : { tag: item };
 
-    const value = source.guild_id ?? source.tag ?? source.id ?? source.name;
-    const resolved = resolveGuild(vocab, value, field);
+    const value = source.tag_id ?? source.tag ?? source.id ?? source.name;
+    const resolved = resolveTag(vocab, value, field);
     if ("error" in resolved) return resolved;
 
     let isPrimary = false;
@@ -423,7 +423,7 @@ async function describe(row: Row, vocab: Vocabulary, message: string): Promise<R
   const service = serviceClient();
 
   const [tagLinks, audienceLinks] = await Promise.all([
-    service.from("agenda_guilds").select("guild_id, is_primary").eq(
+    service.from("agenda_tags").select("tag_id, is_primary").eq(
       "agenda_id",
       agendaId,
     ),
@@ -447,7 +447,7 @@ async function describe(row: Row, vocab: Vocabulary, message: string): Promise<R
   // Primary first, matching the order user/agenda.ts returns tags in.
   const tags = (tagLinks.data ?? [])
     .map((link) => ({
-      ...vocab.guilds.find((guild) => guild.id === link.guild_id),
+      ...vocab.tags.find((tag) => tag.id === link.tag_id),
       is_primary: link.is_primary === true,
     }))
     .sort((a, b) => (a.is_primary === b.is_primary ? 0 : a.is_primary ? -1 : 1));
@@ -458,7 +458,6 @@ async function describe(row: Row, vocab: Vocabulary, message: string): Promise<R
     event_day: named(row.event_day_config_id),
     stage: named(row.stage_config_id),
     tags,
-    primary_tag: tags.find((tag) => tag.is_primary) ?? null,
     user_types: (audienceLinks.data ?? [])
       .map((link) => named(link.user_type_config_id))
       .filter(Boolean),
@@ -481,14 +480,14 @@ async function writeLinks(
   const service = serviceClient();
 
   if (tags !== null) {
-    const previous = await service.from("agenda_guilds")
-      .select("guild_id, is_primary").eq("agenda_id", agendaId);
+    const previous = await service.from("agenda_tags")
+      .select("tag_id, is_primary").eq("agenda_id", agendaId);
     if (previous.error) {
       logDbFailure("agenda tags read", previous.error);
       return "The event's tags could not be read.";
     }
 
-    const cleared = await service.from("agenda_guilds").delete().eq(
+    const cleared = await service.from("agenda_tags").delete().eq(
       "agenda_id",
       agendaId,
     );
@@ -498,14 +497,14 @@ async function writeLinks(
     }
 
     if (tags.length > 0) {
-      const { error } = await service.from("agenda_guilds")
+      const { error } = await service.from("agenda_tags")
         .insert(tags.map((tag) => ({ agenda_id: agendaId, ...tag })));
       if (error) {
         logDbFailure("agenda tags insert", error);
         // Put back what was there. If this fails too the event is left untagged,
         // which the log line above and this one together make findable.
         if ((previous.data ?? []).length > 0) {
-          const restored = await service.from("agenda_guilds")
+          const restored = await service.from("agenda_tags")
             .insert(
               (previous.data ?? []).map((link) => ({ agenda_id: agendaId, ...link })),
             );

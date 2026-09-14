@@ -86,6 +86,7 @@ type Lookups = {
   userTypeIds: Set<number>;
   tags: Map<string, Tag[]>;
   audiences: Map<string, Named[]>;
+  tagNames: Map<number, string>;
 };
 
 const NO_LOOKUPS: Lookups = {
@@ -93,6 +94,7 @@ const NO_LOOKUPS: Lookups = {
   userTypeIds: new Set(),
   tags: new Map(),
   audiences: new Map(),
+  tagNames: new Map(),
 };
 
 /** Map lookup that tolerates a null/absent foreign key. */
@@ -142,15 +144,11 @@ function shapeEvent(
 
   return {
     ...row,
-    // Named the same as the embeds this replaced, so the response shape is
-    // unchanged for the client.
     quest,
     event_day: eventDay,
     stage,
     quest_section: questSection(quest?.name),
     tags,
-    primary_tag: tags.find((tag) => tag.is_primary) ?? null,
-    secondary_tags: tags.filter((tag) => !tag.is_primary),
     user_types: lookups.audiences.get(id) ?? [],
     is_past: isPast,
     my_status: state.status,
@@ -197,7 +195,7 @@ async function myStates(
  * Everything a page of events needs besides its own columns, in four flat
  * queries and no embeds.
  *
- * public.configs and public.guilds are reference tables — a dozen-odd rows each —
+ * public.configs and public.tags are reference tables — a dozen-odd rows each —
  * so they are fetched whole rather than filtered or joined. That is what lets the
  * agenda query itself be columns-only: see the note on AGENDA_SELECT for why the
  * embedded version could not be relied on.
@@ -206,11 +204,11 @@ async function loadLookups(agendaIds: string[]): Promise<Lookups> {
   const service = serviceClient();
   const none = { data: [] as Record<string, unknown>[], error: null };
 
-  const [configs, guilds, tagLinks, audienceLinks] = await Promise.all([
+  const [configs, allTags, tagLinks, audienceLinks] = await Promise.all([
     service.from("configs").select("id, name, type"),
-    service.from("guilds").select("id, name"),
+    service.from("tags").select("id, name"),
     agendaIds.length
-      ? service.from("agenda_guilds").select("agenda_id, guild_id, is_primary")
+      ? service.from("agenda_tags").select("agenda_id, tag_id, is_primary")
         .in("agenda_id", agendaIds)
       : Promise.resolve(none),
     agendaIds.length
@@ -220,7 +218,7 @@ async function loadLookups(agendaIds: string[]): Promise<Lookups> {
   ]);
 
   if (configs.error) throw configs.error;
-  if (guilds.error) throw guilds.error;
+  if (allTags.error) throw allTags.error;
   if (tagLinks.error) throw tagLinks.error;
   if (audienceLinks.error) throw audienceLinks.error;
 
@@ -232,19 +230,20 @@ async function loadLookups(agendaIds: string[]): Promise<Lookups> {
     if (row.type === "user_type") userTypeIds.add(id);
   }
 
-  const guildsById = new Map<number, Named>();
-  for (const row of guilds.data ?? []) {
+  const tagNames = new Map<number, string>();
+  for (const row of allTags.data ?? []) {
     const id = row.id as number;
-    guildsById.set(id, { id, name: row.name as string });
+    tagNames.set(id, row.name as string);
   }
 
   const tags = new Map<string, Tag[]>();
   for (const row of tagLinks.data ?? []) {
-    const guild = guildsById.get(row.guild_id as number);
-    if (!guild) continue;
+    const tagId = row.tag_id as number;
+    const tagName = tagNames.get(tagId);
+    if (!tagName) continue;
     const key = row.agenda_id as string;
     const list = tags.get(key) ?? [];
-    list.push({ ...guild, is_primary: row.is_primary === true });
+    list.push({ id: tagId, name: tagName, is_primary: row.is_primary === true });
     tags.set(key, list);
   }
 
@@ -263,12 +262,12 @@ async function loadLookups(agendaIds: string[]): Promise<Lookups> {
   }
   for (const list of audiences.values()) list.sort((a, b) => a.id - b.id);
 
-  return { configs: configsById, userTypeIds, tags, audiences };
+  return { configs: configsById, userTypeIds, tags, audiences, tagNames };
 }
 
 /** Event ids carrying a given tag, or tagged for a given audience. */
 async function idsFromJoin(
-  table: "agenda_guilds" | "agenda_user_types",
+  table: "agenda_tags" | "agenda_user_types",
   column: string,
   value: number,
 ): Promise<string[]> {
@@ -299,7 +298,7 @@ type ListFilters = {
   date: string | null;
   quest: string | null;
   questConfigId: number | null;
-  guildId: number | null;
+  tagId: number | null;
   userTypeId: number | null;
   search: string | null;
   /** Restrict to my schedule (or, for the schedule route, to my rows). */
@@ -348,8 +347,8 @@ function readFilters(
     }
   }
 
-  const guild = optionalId(params, "guild_id", "guild_id must be a guilds.id.");
-  if ("error" in guild) return guild;
+  const tag = optionalId(params, "tag_id", "tag_id must be a tags.id.");
+  if ("error" in tag) return tag;
 
   const userType = optionalId(
     params,
@@ -366,7 +365,7 @@ function readFilters(
     date,
     quest,
     questConfigId,
-    guildId: guild.value,
+    tagId: tag.value,
     userTypeId: userType.value,
     search: params.get("search")?.trim() || null,
     onlyStatuses: savedRaw === "true" || savedRaw === "1" ? ON_SCHEDULE : null,
@@ -398,8 +397,8 @@ async function listEvents(
    */
   const idSets: string[][] = [];
 
-  if (filters.guildId !== null) {
-    idSets.push(await idsFromJoin("agenda_guilds", "guild_id", filters.guildId));
+  if (filters.tagId !== null) {
+    idSets.push(await idsFromJoin("agenda_tags", "tag_id", filters.tagId));
   }
   if (filters.userTypeId !== null) {
     idSets.push(
@@ -502,7 +501,7 @@ async function listEvents(
   });
 }
 
-/** GET user/agenda?day=&quest=&guild_id=&user_type=&search=&saved=&sponsored= */
+/** GET user/agenda?day=&quest=&tag_id=&user_type=&search=&saved=&sponsored= */
 export async function getAgenda(url: URL, viewerId: string): Promise<Response> {
   const filters = readFilters(url.searchParams);
   if ("error" in filters) return fail(filters.error, 400);
