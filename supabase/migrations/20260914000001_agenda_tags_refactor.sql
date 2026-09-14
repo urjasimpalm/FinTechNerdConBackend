@@ -158,8 +158,5 @@ join public.guilds g on ag.guild_id = g.id
 join public.tags t on g.name = t.name
 on conflict (agenda_id, tag_id) do nothing;
 
-comment on column public.agenda.guild_id is
-  'DEPRECATED: Use public.agenda_tags instead. Kept for backward compatibility during migration.';
-
 comment on table public.agenda_guilds is
   'DEPRECATED: Use public.agenda_tags instead. Kept for backward compatibility during migration. agenda_guilds used to serve double duty for both guilds and tags; agenda_tags now handles tags separately.';
