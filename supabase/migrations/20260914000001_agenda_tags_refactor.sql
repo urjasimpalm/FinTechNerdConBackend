@@ -48,11 +48,12 @@ create table if not exists public.tags (
 
 alter table public.tags enable row level security;
 
-create policy "tags are readable by authenticated users"
+create policy "tags are readable by all users"
   on public.tags for select
-  to authenticated
+  to public, authenticated
   using (true);
 
+grant select on table public.tags to anon;
 grant select on table public.tags to authenticated;
 grant select, insert, update, delete on table public.tags to service_role;
 
@@ -103,11 +104,12 @@ create index if not exists idx_agenda_tags_tag_id
 
 alter table public.agenda_tags enable row level security;
 
-create policy "agenda tags are readable by authenticated users"
+create policy "agenda tags are readable by all users"
   on public.agenda_tags for select
-  to authenticated
+  to public, authenticated
   using (true);
 
+grant select on table public.agenda_tags to anon;
 grant select on table public.agenda_tags to authenticated;
 grant select, insert, update, delete on table public.agenda_tags to service_role;
 
