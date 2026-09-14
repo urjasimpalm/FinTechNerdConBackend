@@ -339,9 +339,6 @@ function readUserTypes(
 }
 
 const OPTIONAL_TEXT = [
-  "speaker_name",
-  "speaker_title",
-  "speaker_company",
   "location",
   "status",
 ];
@@ -503,8 +500,7 @@ function timesAgree(row: Row, existing: Row | null): string | null {
 /** The columns the response echoes back — the same set user/agenda.ts reads. */
 const EVENT_SELECT = `
   id, name, description, day, start_time, end_time,
-  speaker_name, speaker_title, speaker_company,
-  location, xp_value, is_sponsored, is_invite_only, capacity,
+  speakers, location, xp_value, is_sponsored, sponsor_name, is_invite_only, capacity,
   sort_order, status,
   event_quest_config_id, event_day_config_id, stage_config_id,
   created_at
