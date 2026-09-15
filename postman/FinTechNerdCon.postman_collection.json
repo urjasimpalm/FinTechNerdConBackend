@@ -28,7 +28,8 @@
     {
       "key": "access_token",
       "value": "",
-      "type": "string"
+      "type": "string",
+      "description": "Regular user access token from Login request"
     },
     {
       "key": "refresh_token",
@@ -41,6 +42,18 @@
       "type": "string"
     },
     {
+      "key": "admin_access_token",
+      "value": "",
+      "type": "string",
+      "description": "Admin user access token from Login as Admin request"
+    },
+    {
+      "key": "admin_user_id",
+      "value": "",
+      "type": "string",
+      "description": "Admin user ID from Login as Admin request"
+    },
+    {
       "key": "test_email",
       "value": "you@example.com",
       "type": "string"
@@ -49,6 +62,18 @@
       "key": "test_password",
       "value": "Passw0rd!23",
       "type": "string"
+    },
+    {
+      "key": "admin_email",
+      "value": "admin@example.com",
+      "type": "string",
+      "description": "Admin user email for Login as Admin request"
+    },
+    {
+      "key": "admin_password",
+      "value": "AdminPassw0rd!23",
+      "type": "string",
+      "description": "Admin user password for Login as Admin request"
     },
     {
       "key": "other_user_id",
@@ -344,6 +369,61 @@
                   "  pm.test('token stored', () => pm.expect(pm.variables.get('access_token')).to.be.a('string').and.not.empty);",
                   "} else {",
                   "  console.log('Login failed:', pm.response.code, body.message);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Admin",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+            },
+            "description": "Login with an admin account. Stores admin_access_token and admin_user_id for use with admin routes.\n\nMake sure the user account has is_admin = true in the database, or this will fail with 401.\n\nThe test script stores admin_access_token and admin_user_id for the admin requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('admin_access_token', body.data.token);",
+                  "  pm.collectionVariables.set('admin_user_id', body.data.user.id);",
+                  "  pm.test('admin token stored', () => pm.expect(pm.variables.get('admin_access_token')).to.be.a('string').and.not.empty);",
+                  "  console.log('Admin logged in. Use {{admin_access_token}} for admin routes.');",
+                  "} else {",
+                  "  console.log('Admin login failed:', pm.response.code, body.message, '- Make sure the account has is_admin = true');",
                   "}"
                 ]
               }
@@ -2688,7 +2768,29 @@
     },
     {
       "name": "9. Admin routes",
-      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post, GET admin/stats, POST admin/agenda/create, POST admin/agenda/update, GET admin/speakers/list, POST admin/speakers/create, POST admin/speakers/update/{id}, DELETE admin/speakers/delete/{id}, POST admin/sponsor/create, POST admin/sponsor/update.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees; agenda/* and sponsor/* author the schedule and the sponsor list; speakers/* manages speaker profiles used in agenda events \u2014 all no app screen writes to. Run each create before the update next to it, since it stashes the new id in a collection variable. See postman/API.md \u00a77, \u00a78, and \u00a711.8.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. Run **1. Auth \u2192 Login** with an admin account first; these requests inherit that token.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'you@yourdomain.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
+      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post, GET admin/stats, POST admin/agenda/create, POST admin/agenda/update, GET admin/speakers/list, POST admin/speakers/create, POST admin/speakers/update/{id}, DELETE admin/speakers/delete/{id}, POST admin/sponsor/create, POST admin/sponsor/update.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees; agenda/* and sponsor/* author the schedule and the sponsor list; speakers/* manages speaker profiles used in agenda events \u2014 all no app screen writes to. Run each create before the update next to it, since it stashes the new id in a collection variable. See postman/API.md \u00a77, \u00a78, and \u00a711.8.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. **Two ways to authenticate:**\n\n1. **Single Admin User**: Run **1. Auth \u2192 Login as Admin** once at the start. All admin requests use {{admin_access_token}}.\n2. **Multiple Simultaneous Users**: Run both **1. Auth \u2192 Login** (regular user) and **1. Auth \u2192 Login as Admin** (admin user). Requests will use {{admin_access_token}} if set, otherwise fall back to {{access_token}}.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'your-admin@example.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Use admin_access_token if available (logged in as admin), otherwise fall back to regular access_token",
+              "const adminToken = pm.variables.get('admin_access_token');",
+              "const userToken = pm.variables.get('access_token');",
+              "const token = adminToken && adminToken.trim() ? adminToken : userToken;",
+              "",
+              "if (token && token.trim()) {",
+              "  pm.request.headers.add({",
+              "    key: 'Authorization',",
+              "    value: 'Bearer ' + token,",
+              "    disabled: false",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ],
       "item": [
         {
           "name": "List attendee emails",
