@@ -2768,25 +2768,36 @@
     },
     {
       "name": "9. Admin routes",
-      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post, GET admin/stats, POST admin/agenda/create, POST admin/agenda/update, GET admin/speakers/list, POST admin/speakers/create, POST admin/speakers/update/{id}, DELETE admin/speakers/delete/{id}, POST admin/sponsor/create, POST admin/sponsor/update.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees; agenda/* and sponsor/* author the schedule and the sponsor list; speakers/* manages speaker profiles used in agenda events \u2014 all no app screen writes to. Run each create before the update next to it, since it stashes the new id in a collection variable. See postman/API.md \u00a77, \u00a78, and \u00a711.8.\n\n**Admin only**: needs the access token of a user whose public.users row has is_admin = true. **Two ways to authenticate:**\n\n1. **Single Admin User**: Run **1. Auth \u2192 Login as Admin** once at the start. All admin requests use {{admin_access_token}}.\n2. **Multiple Simultaneous Users**: Run both **1. Auth \u2192 Login** (regular user) and **1. Auth \u2192 Login as Admin** (admin user). Requests will use {{admin_access_token}} if set, otherwise fall back to {{access_token}}.\n\nis_admin is writable only by the service role (Studio or SQL), so an admin cannot promote anyone through the API:\n\n```sql\nupdate public.users set is_admin = true where email = 'your-admin@example.com';\n```\n\nEntries are invitations, not accounts: removing one stops future registrations but leaves any account that already registered with it untouched.",
+      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post, GET admin/stats, POST admin/agenda/create, POST admin/agenda/update, GET admin/speakers/list, POST admin/speakers/create, POST admin/speakers/update/{id}, DELETE admin/speakers/delete/{id}, POST admin/sponsor/create, POST admin/sponsor/update.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees; agenda/* and sponsor/* author the schedule and the sponsor list; speakers/* manages speaker profiles used in agenda events \u2014 all no app screen writes to. Run each create before the update next to it, since it stashes the new id in a collection variable. See postman/API.md \u00a77, \u00a78, and \u00a711.8.\n\n**Admin only**: requires {{admin_access_token}} from a user whose public.users row has is_admin = true.\n\n**Setup**: Run **1. Auth \u2192 Login as Admin** first to populate {{admin_access_token}}. All requests in this folder automatically use admin_access_token.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{admin_access_token}}",
+            "type": "string"
+          }
+        ]
+      },
       "event": [
         {
           "listen": "prerequest",
           "script": {
             "type": "text/javascript",
             "exec": [
-              "// Use admin_access_token if available (logged in as admin), otherwise fall back to regular access_token",
+              "// Admin routes MUST use admin_access_token",
               "const adminToken = pm.variables.get('admin_access_token');",
-              "const userToken = pm.variables.get('access_token');",
-              "const token = adminToken && adminToken.trim() ? adminToken : userToken;",
               "",
-              "if (token && token.trim()) {",
-              "  pm.request.headers.add({",
-              "    key: 'Authorization',",
-              "    value: 'Bearer ' + token,",
-              "    disabled: false",
-              "  });",
-              "}"
+              "if (!adminToken || !adminToken.trim()) {",
+              "  console.error('❌ Admin access token not set. Run \"1. Auth → Login as Admin\" first.');",
+              "  throw new Error('admin_access_token is required for admin routes. Log in with an admin account first.');",
+              "}",
+              "",
+              "pm.request.headers.add({",
+              "  key: 'Authorization',",
+              "  value: 'Bearer ' + adminToken,",
+              "  disabled: false",
+              "});"
             ]
           }
         }
