@@ -165,6 +165,7 @@ async function migrateSpeakers(
 
     speakers.push({
       id: result.id,
+      role: sourceSpeaker.role || "Speaker",
       name: sourceSpeaker.name,
       title: sourceSpeaker.title || null,
       company: sourceSpeaker.company || null,
@@ -266,7 +267,7 @@ async function migrateAgendaItem(
     is_invite_only: sourceRow.invite_only || false,
     capacity: sourceRow.capacity || null,
     status: "scheduled",
-    speakers: JSON.stringify(speakersResult.speakers),
+    speakers: speakersResult.speakers,
     sort_order: sourceRow.sort_order || 0,
   };
 
