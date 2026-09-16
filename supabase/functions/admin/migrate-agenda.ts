@@ -149,7 +149,8 @@ async function migrateSpeakers(
   sourceData: SourceAgendaRow,
 ): Promise<{ speakers: TargetSpeaker[] | null; error?: string }> {
   if (!sourceData.speakers || !Array.isArray(sourceData.speakers) || sourceData.speakers.length === 0) {
-    return { speakers: null, error: "No speakers found in source" };
+    console.log(`[MIGRATION] No speakers in source, returning empty array`);
+    return { speakers: [] };
   }
 
   const speakers: TargetSpeaker[] = [];
