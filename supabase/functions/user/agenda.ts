@@ -48,7 +48,6 @@ const ON_SCHEDULE = ["saved", "approved"];
  */
 const AGENDA_SELECT = `
   id, name, description, day, start_time, end_time,
-  speaker_name, speaker_title, speaker_company,
   location, xp_value, is_sponsored, sponsor_name, is_invite_only, capacity,
   sort_order, status,
   speakers,

@@ -66,7 +66,7 @@ type MigrationResult = {
   errors: MigrationError[];
 };
 
-const MAX_DESCRIPTION = 650;
+const MAX_DESCRIPTION = 2000;
 
 /**
  * Generate speaker ID for target speakers table.
@@ -173,11 +173,9 @@ async function migrateSpeakers(
   }
 
   if (speakers.length === 0) {
-    return { speakers: null, error: errors.join("; ") || "Failed to migrate any speakers" };
-  }
-
-  if (speakers.length < 1) {
-    return { speakers: null, error: "Agenda requires at least 1 speaker" };
+    // No speakers found in source — return empty array, will be handled by trigger validation
+    console.log(`[MIGRATION] No speakers in source for "${sourceData.title}", using empty array`);
+    return { speakers: [] };
   }
 
   if (speakers.length > 4) {

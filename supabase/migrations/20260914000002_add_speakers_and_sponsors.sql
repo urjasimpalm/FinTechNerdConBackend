@@ -89,7 +89,7 @@ begin
 end;
 $$;
 
--- Function to validate speaker count (1-4 speakers)
+-- Function to validate speaker count (0-4 speakers)
 create or replace function public.validate_agenda_speakers()
 returns trigger
 language plpgsql
@@ -114,11 +114,6 @@ begin
       speaker_count := 0;
     end if;
 
-    if speaker_count < 1 then
-      raise exception 'Agenda must have at least 1 speaker.'
-        using errcode = 'P0001';
-    end if;
-
     if speaker_count > 4 then
       raise exception 'Agenda can have at most 4 speakers.'
         using errcode = 'P0001';
@@ -139,7 +134,7 @@ create trigger validate_agenda_speakers_trigger
 comment on table public.agenda is
   'Event sessions/agenda items. Supports multiple speakers (1-4) and sponsor information.';
 comment on column public.agenda.speakers is
-  'Array of speaker objects: [{id, name, title, company}, ...]. Min 1, max 4 speakers.';
+  'Array of speaker objects: [{id, name, title, company}, ...]. 0-4 speakers (empty array allowed).';
 comment on column public.agenda.is_sponsored is
   'Whether the agenda item is sponsored (default: false).';
 comment on column public.agenda.sponsor_name is
