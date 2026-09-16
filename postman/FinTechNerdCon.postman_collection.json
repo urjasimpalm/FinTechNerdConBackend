@@ -2768,7 +2768,7 @@
     },
     {
       "name": "9. Admin routes",
-      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post, GET admin/stats, POST admin/agenda/create, POST admin/agenda/update, GET admin/speakers/list, POST admin/speakers/create, POST admin/speakers/update/{id}, DELETE admin/speakers/delete/{id}, POST admin/sponsor/create, POST admin/sponsor/update.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees; agenda/* and sponsor/* author the schedule and the sponsor list; speakers/* manages speaker profiles used in agenda events \u2014 all no app screen writes to. Run each create before the update next to it, since it stashes the new id in a collection variable. See postman/API.md \u00a77, \u00a78, and \u00a711.8.\n\n**Admin only**: requires {{admin_access_token}} from a user whose public.users row has is_admin = true.\n\n**Setup**: Run **1. Auth \u2192 Login as Admin** first to populate {{admin_access_token}}. All requests in this folder automatically use admin_access_token.",
+      "description": "Admin-only routes on one edge function, routed on the path: GET admin/user/list, POST admin/user/add, DELETE admin/user/remove, GET admin/announcement/get, POST admin/announcement/post, GET admin/stats, POST admin/agenda/create, POST admin/agenda/update, POST admin/agenda/migrate-from-source, GET admin/speakers/list, POST admin/speakers/create, POST admin/speakers/update/{id}, DELETE admin/speakers/delete/{id}, POST admin/sponsor/create, POST admin/sponsor/update.\n\nuser/* manages public.email_stack (the invite list registration is gated on); announcement/* edits the banner every signed-in user sees; agenda/* and sponsor/* author the schedule and the sponsor list; agenda/migrate-from-source performs one-click migration of the complete agenda from the source Supabase project; speakers/* manages speaker profiles used in agenda events \u2014 all no app screen writes to. Run each create before the update next to it, since it stashes the new id in a collection variable. See postman/API.md \u00a77, \u00a78, \u00a711.8, and \u00a711.9.\n\n**Admin only**: requires {{admin_access_token}} from a user whose public.users row has is_admin = true.\n\n**Setup**: Run **1. Auth \u2192 Login as Admin** first to populate {{admin_access_token}}. All requests in this folder automatically use admin_access_token.",
       "auth": {
         "type": "bearer",
         "bearer": [
@@ -3267,6 +3267,74 @@
                   "  });",
                   "} else {",
                   "  console.log('admin route:', pm.response.code, body.message, '- run Create an agenda event first, as a user with is_admin = true.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Migrate agenda from source",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/functions/v1/admin/agenda/migrate-from-source",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "functions",
+                "v1",
+                "admin",
+                "agenda",
+                "migrate-from-source"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Migrates the complete agenda from the source Supabase project (Fintech NerdCon Agenda Main) to this target project. Handles:\n\n- Reading all agenda sessions from the source `public.public_agenda` view\n- Creating/updating speakers in the target `public.speakers` table\n- Creating/updating agenda events in the target `public.agenda` table\n- Tracking migrations with `public.agenda_source_map` for idempotency\n- Comprehensive error reporting\n\n**Admin only.** No request body is required — the source and target Supabase credentials are configured server-side via environment variables.\n\n**Idempotent**: Running this endpoint multiple times is safe. Sessions already migrated are updated instead of duplicated.\n\nThe response includes detailed migration statistics:\n\n```json\n{\n  \"status\": \"Success\",\n  \"message\": \"Migration completed\",\n  \"data\": {\n    \"success\": true,\n    \"total\": 48,\n    \"created\": 45,\n    \"updated\": 3,\n    \"skipped\": 0,\n    \"failed\": 0,\n    \"errors\": []\n  }\n}\n```\n\n**Response format:**\n\n| Field | Type | Description |\n| --- | --- | --- |\n| success | boolean | Overall success (true if at least some rows were migrated, even with partial failures) |\n| total | integer | Total source sessions found |\n| created | integer | New agenda items created |\n| updated | integer | Existing agenda items updated |\n| skipped | integer | Sessions not migrated (e.g., validation errors) |\n| failed | integer | Sessions that failed migration |\n| errors | array | Detailed error info: `[{session_id, title, error}, ...]` |\n\n**Validation**:\n- Description must be ≤ 650 characters\n- Sponsored events must have a non-empty sponsor_name\n- Events must have at least 1 speaker (max 4)\n- Foreign key IDs must be valid in the target project\n\n**Status codes:**\n\n- **200** Migration completed (may include partial failures in `data.errors`)\n- **400** Invalid request or configuration\n- **401** No bearer token, or anon key was sent instead of user token\n- **403** Signed in but `is_admin` is false\n- **500** Server error during migration\n\n**Setup**: Run **1. Auth → Login as Admin** first to populate {{admin_access_token}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('documented status', () => pm.expect([200, 400, 401, 403, 500]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('migration statistics', () => {",
+                  "    pm.expect(body.data).to.have.property('success').that.is.a('boolean');",
+                  "    pm.expect(body.data).to.have.property('total').that.is.a('number');",
+                  "    pm.expect(body.data).to.have.property('created').that.is.a('number');",
+                  "    pm.expect(body.data).to.have.property('updated').that.is.a('number');",
+                  "    pm.expect(body.data).to.have.property('failed').that.is.a('number');",
+                  "    pm.expect(body.data).to.have.property('errors').that.is.an('array');",
+                  "    pm.expect(body.data.created + body.data.updated + body.data.failed).to.equal(body.data.total);",
+                  "  });",
+                  "  console.log(`Migration: ${body.data.created} created, ${body.data.updated} updated, ${body.data.failed} failed out of ${body.data.total}`);",
+                  "  if (body.data.errors && body.data.errors.length > 0) {",
+                  "    console.log('Errors:', body.data.errors);",
+                  "  }",
+                  "} else {",
+                  "  console.log('admin route:', pm.response.code, body.message, '- log in as a user with is_admin = true to run this.');",
                   "}"
                 ]
               }

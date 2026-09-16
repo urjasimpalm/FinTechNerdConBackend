@@ -25,6 +25,8 @@ export function anonClient(): SupabaseClient {
  * Service-role client: bypasses RLS. Needed because public.users has no insert
  * policy (profiles are only ever created server-side) and because the invite
  * list in public.email_stack is not readable by anon.
+ *
+ * This is the TARGET project (Simpalm Fintech Nerd Con App).
  */
 export function serviceClient(): SupabaseClient {
   return createClient(
@@ -32,6 +34,31 @@ export function serviceClient(): SupabaseClient {
     requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
     authOptions,
   );
+}
+
+/**
+ * Service-role client for the SOURCE Supabase project.
+ *
+ * Used for agenda migration from "Fintech NerdCon Agenda (Main)" project.
+ * Credentials are read from SOURCE_SUPABASE_URL and SOURCE_SUPABASE_SERVICE_ROLE_KEY
+ * environment variables.
+ */
+export function sourceClient(): SupabaseClient {
+  return createClient(
+    requireEnv("SOURCE_SUPABASE_URL"),
+    requireEnv("SOURCE_SUPABASE_SERVICE_ROLE_KEY"),
+    authOptions,
+  );
+}
+
+/**
+ * Service-role client for the TARGET Supabase project (explicit).
+ *
+ * Same as serviceClient() — both names are valid. Use targetClient() when
+ * working with both source and target in the same function for clarity.
+ */
+export function targetClient(): SupabaseClient {
+  return serviceClient();
 }
 
 // The profile shape every endpoint returns lives in ./profile.ts.

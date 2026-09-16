@@ -2266,6 +2266,136 @@ lose it. Note the sponsor list is CDN-cached for 5 minutes
 ([§5](#5-config--reference-data)), so a change can take that long to show up in
 the app.
 
+### 11.9 `POST admin/agenda/migrate-from-source`
+
+Migrates the complete agenda from the source Supabase project ("Fintech NerdCon Agenda
+Main") to the target project. One request copies all agenda events, speakers, and
+associated metadata from the source's `public.public_agenda` view to the target's
+`public.agenda` table.
+
+**Admin only.** No request body is required — the source and target Supabase
+credentials are configured server-side via environment variables, never exposed to the
+client.
+
+**The migration is idempotent:** running this endpoint multiple times is safe. Sessions
+already migrated are updated (not duplicated) based on an internal source-to-target
+mapping table.
+
+**What gets migrated:**
+
+| Source Field | Target Field | Notes |
+| --- | --- | --- |
+| `session_id` | (tracked separately) | Stored in `public.agenda_source_map` |
+| `title` | `name` | — |
+| `description` | `description` | Validated ≤ 650 characters |
+| `session_date` | `day` | — |
+| `start_time`, `end_time` | `start_time`, `end_time` | ISO 8601 format |
+| `stage_name` | `location` | — |
+| `speakers` | `speakers` | Array of speaker objects; see below |
+| `stage_config_id`, `event_quest_config_id`, `event_day_config_id` | Same | IDs assumed identical across projects |
+| `sponsored`, `sponsor_name` | `is_sponsored`, `sponsor_name` | Validated |
+| `xp_value`, `invite_only`, `capacity` | `xp_value`, `is_invite_only`, `capacity` | — |
+| `sort_order` | `sort_order` | — |
+| (default) | `status` | Set to `'scheduled'` for all migrated items |
+
+**Not migrated:** `duration_minutes`, `format`, `hall_name`, `display_group`, `venue`,
+`topics` — these are specific to the source's data model.
+
+**Speaker migration:**
+
+For each speaker in the source event:
+1. Check if a speaker with the same name exists in the target `public.speakers` table
+2. If found, reuse their ID
+3. If not found, create a new speaker entry
+4. Build the target agenda's `speakers` JSON with target speaker IDs and names
+
+The target `speakers` array in the agenda JSON includes: `id` (required), `name`
+(required), `title` (optional), `company` (optional). Triggers enforce 1–4 speakers per
+event.
+
+**Validation:** The migration validates:
+- Description length (≤ 650 characters)
+- Sponsor requirements (if `is_sponsored = true`, `sponsor_name` must be non-empty)
+- Speaker count (1–4 speakers required)
+- Foreign key IDs (must exist in target `public.configs`)
+
+Any validation failure is reported in the response's `errors` array and that session is
+not migrated.
+
+**Response:**
+
+```json
+{
+  "status": "Success",
+  "message": "Migration completed",
+  "data": {
+    "success": true,
+    "total": 48,
+    "created": 45,
+    "updated": 3,
+    "skipped": 0,
+    "failed": 0,
+    "errors": []
+  }
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| success | boolean | Overall outcome: true if at least some sessions migrated (even with partial failures) |
+| total | integer | Total source sessions found in `public.public_agenda` |
+| created | integer | New agenda items inserted in target |
+| updated | integer | Existing agenda items updated (for re-runs) |
+| skipped | integer | Sessions not migrated (no error, just skipped) |
+| failed | integer | Sessions that failed validation or insert |
+| errors | array | Detailed error objects: `[{session_id, title, error}, ...]` |
+
+**Example with an error:**
+
+```json
+{
+  "status": "Success",
+  "message": "Migration completed",
+  "data": {
+    "success": false,
+    "total": 50,
+    "created": 48,
+    "updated": 0,
+    "skipped": 1,
+    "failed": 1,
+    "errors": [
+      {
+        "session_id": "abc-123",
+        "title": "Keynote: The Future of Finance",
+        "error": "Description exceeds 650 characters (found 752 chars)"
+      }
+    ]
+  }
+}
+```
+
+**Status codes:**
+
+| Code | Body |
+| --- | --- |
+| 200 | `{ status: "Success", message: "Migration completed", data: { success, total, created, updated, skipped, failed, errors } }` |
+| 400 | Invalid request or server configuration (missing environment variables) |
+| 401 | No bearer token, or the anon key was sent instead of a user's token |
+| 403 | Signed in but `is_admin` is false |
+| 500 | Unrecoverable server error during migration |
+
+```ts
+// No body required — environment variables set the source/target
+const { data } = await supabase.functions.invoke("admin/agenda/migrate-from-source", {
+  method: "POST",
+});
+
+console.log(`Migrated: ${data.created} created, ${data.updated} updated, ${data.failed} failed`);
+if (data.errors && data.errors.length > 0) {
+  data.errors.forEach(err => console.error(`  ${err.title}: ${err.error}`));
+}
+```
+
 ### Errors (all routes)
 
 | Status | Body |

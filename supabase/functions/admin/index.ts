@@ -14,14 +14,16 @@
 //   DELETE /functions/v1/admin/speakers/delete/{id}
 //   POST   /functions/v1/admin/sponsor/create     name + logo (multipart or JSON)
 //   POST   /functions/v1/admin/sponsor/update     id + whatever is changing
+//   POST   /functions/v1/admin/agenda/migrate-from-source  migrate agenda from source Supabase
 //
 // user/* manages public.email_stack — the attendee list that registration is
 // gated on. Entries there are invitations, not accounts: adding one lets that
 // address register, removing one stops future registrations but leaves any
 // account that already registered with it untouched.
 //
-// agenda/* authors the schedule the Agenda screen reads (./agenda.ts) and
-// sponsor/* the list behind GET config/sponsors (./sponsor.ts). Both tables were
+// agenda/* authors the schedule the Agenda screen reads (./agenda.ts),
+// agenda/migrate-from-source migrates the complete agenda from the source project,
+// and sponsor/* the list behind GET config/sponsors (./sponsor.ts). Both tables were
 // Studio-only before these routes.
 //
 // Every route requires a signed-in user whose public.users row has
@@ -35,6 +37,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { fail, integer, ok, readJson, text } from "../_shared/http.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 import { createEvent, updateEvent } from "./agenda.ts";
+import { migrateAgendaFromSource } from "./migrate-agenda.ts";
 import { listSpeakers, createSpeaker, updateSpeaker, deleteSpeaker } from "./speakers.ts";
 import { createSponsor, updateSponsor } from "./sponsor.ts";
 import { getStats } from "./stats.ts";
@@ -53,6 +56,7 @@ const ROUTES: Record<string, string> = {
   "stats": "GET",
   "agenda/create": "POST",
   "agenda/update": "POST",
+  "agenda/migrate-from-source": "POST",
   "speakers/list": "GET",
   "speakers/create": "POST",
   "speakers/update": "POST",
@@ -409,6 +413,11 @@ Deno.serve(async (req) => {
     // it. They accept JSON too — see admin/sponsor.ts.
     if (route === "sponsor/create") return await createSponsor(req);
     if (route === "sponsor/update") return await updateSponsor(req);
+
+    // agenda/migrate-from-source takes no body — it reads from source Supabase
+    if (route === "agenda/migrate-from-source") {
+      return await migrateAgendaFromSource();
+    }
 
     const body = await readJson(req);
     if (!body) return fail("A JSON body is required.", 400);

@@ -1,7 +1,6 @@
 # Edge Functions
 
-Seven functions. For the whole API surface the app talks to — profile, agenda,
-chat, missions, notifications — see [../../postman/API.md](../../postman/API.md).
+Seven main functions plus the admin endpoint for agenda migration. For the whole API surface the app talks to — profile, agenda, chat, missions, notifications — see [../../postman/API.md](../../postman/API.md).
 
 | What                                            | Call                                         | Auth needed          |
 | ----------------------------------------------- | -------------------------------------------- | -------------------- |
@@ -37,6 +36,7 @@ chat, missions, notifications — see [../../postman/API.md](../../postman/API.m
 | Delete a speaker                                | `DELETE /functions/v1/admin/speakers/{id}`   | **admin** user token |
 | Create an agenda event                          | `POST /functions/v1/admin/agenda/create`     | **admin** user token |
 | Edit an agenda event                            | `POST /functions/v1/admin/agenda/update`     | **admin** user token |
+| Migrate agenda from source project              | `POST /functions/v1/admin/agenda/migrate-from-source` | **admin** user token |
 | Add a sponsor                                   | `POST /functions/v1/admin/sponsor/create`    | **admin** user token |
 | Edit a sponsor                                  | `POST /functions/v1/admin/sponsor/update`    | **admin** user token |
 
@@ -425,6 +425,115 @@ All agenda responses include speakers and sponsor information:
   "...other agenda fields..."
 }
 ```
+
+## 11. Agenda Migration from Source Supabase
+
+One-click migration of the complete agenda from the source Supabase project ("Fintech NerdCon Agenda Main") to the target project ("Fintech Nerd Con App Simpalm").
+
+### Migrate agenda from source
+
+```
+POST /functions/v1/admin/agenda/migrate-from-source
+Authorization: Bearer <admin user token>
+```
+
+**No request body required.** The migration reads from the source Supabase project (configured via environment variables) and writes to the target project.
+
+**Response format:**
+
+```json
+{
+  "status": "Success",
+  "message": "Migration completed",
+  "data": {
+    "success": true,
+    "total": 50,
+    "created": 48,
+    "updated": 0,
+    "failed": 2,
+    "errors": [
+      {
+        "session_id": "session-001",
+        "title": "Keynote",
+        "error": "Description exceeds 650 characters (found 752 chars)"
+      },
+      {
+        "session_id": "session-002",
+        "title": "Workshop",
+        "error": "Sponsored session must have sponsor_name"
+      }
+    ]
+  }
+}
+```
+
+**Fields:**
+- `success`: true if at least some sessions were migrated (even with partial failures)
+- `total`: total source sessions found
+- `created`: new agenda items inserted
+- `updated`: existing agenda items updated (on re-runs)
+- `failed`: sessions that failed validation
+- `errors`: detailed error objects with `session_id`, `title`, `error`
+
+### What gets migrated
+
+| Source Field | Target Field | Notes |
+| --- | --- | --- |
+| `title` | `name` | — |
+| `description` | `description` | Validated ≤ 650 characters |
+| `session_date` | `day` | — |
+| `start_time`, `end_time` | `start_time`, `end_time` | — |
+| `stage_name` | `location` | — |
+| `speakers` | `speakers` | Array with target speaker IDs (1-4 speakers) |
+| `sponsored`, `sponsor_name` | `is_sponsored`, `sponsor_name` | Validated |
+| Config IDs | Same | `event_quest_config_id`, `stage_config_id`, `event_day_config_id` (must be identical in both projects) |
+| `xp_value`, `invite_only`, `capacity` | Same | — |
+| `sort_order` | `sort_order` | — |
+| (default) | `status` | Set to `'scheduled'` for all migrated items |
+
+**Speaker migration:**
+1. For each speaker in source event, search target by name
+2. If found: reuse existing speaker ID
+3. If not found: create new speaker with auto-generated ID
+4. Build target agenda `speakers` JSON with target speaker IDs
+5. Enforces 1-4 speakers per event (trigger validation)
+
+### Idempotency
+
+The migration is safe to run unlimited times:
+- **First run**: Creates new `agenda_source_map` tracking entries
+- **Second run**: Updates existing agenda items instead of creating duplicates
+- All sessions are processed regardless of previous runs
+
+### Validation errors
+
+Sessions with validation errors are reported but do not stop the migration:
+
+| Error | Cause |
+| --- | --- |
+| `Description exceeds 650 characters (X chars)` | Source description too long |
+| `Sponsored session must have sponsor_name` | `is_sponsored = true` but `sponsor_name` is empty |
+| `Agenda requires at least 1 speaker` | No speakers in source session |
+| `Agenda cannot have more than 4 speakers` | More than 4 speakers in source |
+| `Failed to search for existing speaker` | Source Supabase connection error |
+| `Failed to create agenda` | Target database error or invalid config IDs |
+
+### Environment variables (server-side only)
+
+The migration endpoint requires two Supabase projects to be configured via Edge Function secrets (never sent to frontend):
+
+```
+SOURCE_SUPABASE_URL=https://your-source-project.supabase.co
+SOURCE_SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+```
+
+Plus the existing target project variables:
+```
+SUPABASE_URL=https://your-target-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+```
+
+See [MIGRATION_SETUP.md](../MIGRATION_SETUP.md) for complete deployment guide.
 
 ---
 
