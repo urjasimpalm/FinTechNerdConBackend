@@ -30,7 +30,7 @@ alter table public.agenda
 alter table public.agenda
   add column if not exists capacity integer;
 
--- The sheet's 650-character limit on description. Added NOT VALID on purpose:
+-- The description limit on description (2000 characters). Added NOT VALID on purpose:
 -- existing rows are left alone (this is authoring guidance, and failing the
 -- migration over seed copy would be worse), while every insert and update from
 -- here on is checked. Run `alter table public.agenda validate constraint
@@ -44,7 +44,7 @@ begin
   ) then
     alter table public.agenda
       add constraint agenda_description_length
-      check (description is null or char_length(description) <= 650)
+      check (description is null or char_length(description) <= 2000)
       not valid;
   end if;
 end;
