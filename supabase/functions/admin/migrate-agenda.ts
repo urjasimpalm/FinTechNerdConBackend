@@ -291,7 +291,8 @@ async function migrateAgendaItem(
 
       if (error) {
         logDbFailure("agenda update", error);
-        return { id: "", error: "Failed to update agenda" };
+        const errorMsg = (error as any)?.message || String(error) || "Unknown error";
+        return { id: "", error: `Failed to update agenda: ${errorMsg}` };
       }
 
       result = data;
@@ -299,6 +300,7 @@ async function migrateAgendaItem(
       console.log(`[MIGRATION] Agenda updated: "${sourceRow.title}"`);
     } else {
       // Create new
+      console.log(`[MIGRATION] Inserting agenda: ${JSON.stringify({ name: agendaRow.name, speakers_count: Array.isArray(agendaRow.speakers) ? agendaRow.speakers.length : 0, event_quest_config_id: agendaRow.event_quest_config_id, stage_config_id: agendaRow.stage_config_id, event_day_config_id: agendaRow.event_day_config_id })}`);
       const { data, error } = await targetSvc
         .from("agenda")
         .insert(agendaRow)
@@ -307,7 +309,9 @@ async function migrateAgendaItem(
 
       if (error) {
         logDbFailure("agenda insert", error);
-        return { id: "", error: "Failed to create agenda" };
+        const errorMsg = (error as any)?.message || String(error) || "Unknown error";
+        console.error(`[MIGRATION] Insert failed for "${sourceRow.title}": ${errorMsg}`);
+        return { id: "", error: `Failed to create agenda: ${errorMsg}` };
       }
 
       result = data;
