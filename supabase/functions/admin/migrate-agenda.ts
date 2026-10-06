@@ -48,6 +48,7 @@ type TargetSpeaker = {
   name: string;
   title?: string | null;
   company?: string | null;
+  role?: string;
 };
 
 type MigrationError = {
@@ -61,6 +62,7 @@ type MigrationResult = {
   total: number;
   created: number;
   updated: number;
+  deleted: number;
   skipped: number;
   failed: number;
   errors: MigrationError[];
@@ -205,6 +207,109 @@ function validateAgendaRow(row: Record<string, unknown>): string | null {
 }
 
 /**
+ * Sync deletions: remove target rows whose source IDs no longer exist.
+ */
+async function syncDeletions(
+  targetSvc: ReturnType<typeof targetClient>,
+  sourceSessionIds: Set<string>,
+): Promise<{ deleted: number; failed: number; deleteErrors: MigrationError[] }> {
+  console.log("[MIGRATION] Starting deletion sync");
+
+  const deleteErrors: MigrationError[] = [];
+
+  try {
+    // Fetch all target agenda IDs with source mappings
+    const { data: mappings, error: mapFetchError } = await targetSvc
+      .from("agenda_source_map")
+      .select("source_session_id, target_agenda_id");
+
+    if (mapFetchError) {
+      logDbFailure("agenda source map fetch", mapFetchError);
+      return { deleted: 0, failed: 1, deleteErrors: [{ session_id: "all", title: "Map fetch", error: "Failed to fetch agenda mappings" }] };
+    }
+
+    if (!mappings || mappings.length === 0) {
+      console.log("[MIGRATION] No mappings found, nothing to delete");
+      return { deleted: 0, failed: 0, deleteErrors: [] };
+    }
+
+    // Find target IDs that should be deleted (exist in target but not in source)
+    const targetIdsToDelete: Array<{ source_session_id: string; target_agenda_id: string }> = [];
+
+    for (const mapping of mappings) {
+      if (!sourceSessionIds.has(mapping.source_session_id)) {
+        targetIdsToDelete.push(mapping);
+      }
+    }
+
+    if (targetIdsToDelete.length === 0) {
+      console.log("[MIGRATION] No agenda items to delete");
+      return { deleted: 0, failed: 0, deleteErrors: [] };
+    }
+
+    console.log(`[MIGRATION] Found ${targetIdsToDelete.length} agenda items to delete`);
+
+    let deletedCount = 0;
+    let failedCount = 0;
+
+    // Delete each target agenda item and its mapping
+    for (const mapping of targetIdsToDelete) {
+      try {
+        // Delete from agenda table
+        const { error: deleteError } = await targetSvc
+          .from("agenda")
+          .delete()
+          .eq("id", mapping.target_agenda_id);
+
+        if (deleteError) {
+          logDbFailure(`agenda delete for id ${mapping.target_agenda_id}`, deleteError);
+          deleteErrors.push({
+            session_id: mapping.source_session_id,
+            title: `Agenda ID: ${mapping.target_agenda_id}`,
+            error: `Failed to delete: ${deleteError.message || String(deleteError)}`,
+          });
+          failedCount++;
+          continue;
+        }
+
+        // Delete from mapping table
+        const { error: mapDeleteError } = await targetSvc
+          .from("agenda_source_map")
+          .delete()
+          .eq("source_session_id", mapping.source_session_id);
+
+        if (mapDeleteError) {
+          logDbFailure(`agenda source map delete for ${mapping.source_session_id}`, mapDeleteError);
+          deleteErrors.push({
+            session_id: mapping.source_session_id,
+            title: `Agenda ID: ${mapping.target_agenda_id}`,
+            error: `Failed to delete mapping: ${mapDeleteError.message || String(mapDeleteError)}`,
+          });
+          failedCount++;
+          continue;
+        }
+
+        deletedCount++;
+        console.log(`[MIGRATION] Deleted agenda: ${mapping.source_session_id} (target: ${mapping.target_agenda_id})`);
+      } catch (err) {
+        console.error("[MIGRATION] Deletion error:", err);
+        deleteErrors.push({
+          session_id: mapping.source_session_id,
+          title: `Agenda ID: ${mapping.target_agenda_id}`,
+          error: `Unexpected error: ${String(err)}`,
+        });
+        failedCount++;
+      }
+    }
+
+    return { deleted: deletedCount, failed: failedCount, deleteErrors };
+  } catch (err) {
+    console.error("[MIGRATION] Deletion sync error:", err);
+    return { deleted: 0, failed: 1, deleteErrors: [{ session_id: "all", title: "Deletion sync", error: `Unexpected error: ${String(err)}` }] };
+  }
+}
+
+/**
  * Migrate a single agenda item.
  */
 async function migrateAgendaItem(
@@ -223,7 +328,7 @@ async function migrateAgendaItem(
 
   if (mapError) {
     logDbFailure("agenda source map check", mapError);
-    return { id: "", error: "Failed to check migration status" };
+    return { id: "", created: false, error: "Failed to check migration status" };
   }
 
   // Validate description length
@@ -231,22 +336,22 @@ async function migrateAgendaItem(
     ? `Description exceeds ${MAX_DESCRIPTION} characters`
     : null;
   if (descError) {
-    return { id: "", error: descError };
+    return { id: "", created: false, error: descError };
   }
 
   // Validate sponsor
   if (sourceRow.sponsored && (!sourceRow.sponsor_name || sourceRow.sponsor_name.trim() === "")) {
-    return { id: "", error: "Sponsored session must have sponsor_name" };
+    return { id: "", created: false, error: "Sponsored session must have sponsor_name" };
   }
 
   // Migrate speakers
   const speakersResult = await migrateSpeakers(targetSvc, sourceRow);
   if (speakersResult.error) {
-    return { id: "", error: `Speaker migration failed: ${speakersResult.error}` };
+    return { id: "", created: false, error: `Speaker migration failed: ${speakersResult.error}` };
   }
 
   if (!speakersResult.speakers) {
-    return { id: "", error: "No speakers available after migration" };
+    return { id: "", created: false, error: "No speakers available after migration" };
   }
 
   // Build agenda row for target
@@ -273,7 +378,7 @@ async function migrateAgendaItem(
   // Validate before insert/update
   const validationError = validateAgendaRow(agendaRow);
   if (validationError) {
-    return { id: "", error: validationError };
+    return { id: "", created: false, error: validationError };
   }
 
   try {
@@ -292,7 +397,7 @@ async function migrateAgendaItem(
       if (error) {
         logDbFailure("agenda update", error);
         const errorMsg = (error as any)?.message || String(error) || "Unknown error";
-        return { id: "", error: `Failed to update agenda: ${errorMsg}` };
+        return { id: "", created: false, error: `Failed to update agenda: ${errorMsg}` };
       }
 
       result = data;
@@ -311,7 +416,7 @@ async function migrateAgendaItem(
         logDbFailure("agenda insert", error);
         const errorMsg = (error as any)?.message || String(error) || "Unknown error";
         console.error(`[MIGRATION] Insert failed for "${sourceRow.title}": ${errorMsg}`);
-        return { id: "", error: `Failed to create agenda: ${errorMsg}` };
+        return { id: "", created: false, error: `Failed to create agenda: ${errorMsg}` };
       }
 
       result = data;
@@ -319,7 +424,7 @@ async function migrateAgendaItem(
     }
 
     if (!result?.id) {
-      return { id: "", error: "No agenda ID returned" };
+      return { id: "", created: false, error: "No agenda ID returned" };
     }
 
     // Record mapping
@@ -333,14 +438,14 @@ async function migrateAgendaItem(
 
       if (mapInsertError) {
         logDbFailure("agenda source map insert", mapInsertError);
-        return { id: result.id, error: "Agenda created but mapping failed" };
+        return { id: result.id, created: wasCreated, error: "Agenda created but mapping failed" };
       }
     }
 
     return { id: result.id, created: wasCreated };
   } catch (err) {
     console.error("[MIGRATION] Agenda operation error:", err);
-    return { id: "", error: `Unexpected error: ${String(err)}` };
+    return { id: "", created: false, error: `Unexpected error: ${String(err)}` };
   }
 }
 
@@ -368,17 +473,8 @@ export async function migrateAgendaFromSource(): Promise<Response> {
     const rows = (sourceRows ?? []) as SourceAgendaRow[];
     console.log(`[MIGRATION] Source records found: ${rows.length}`);
 
-    if (rows.length === 0) {
-      return ok("No source agenda records to migrate", {
-        success: true,
-        total: 0,
-        created: 0,
-        updated: 0,
-        skipped: 0,
-        failed: 0,
-        errors: [],
-      } as MigrationResult);
-    }
+    // Track source session IDs for deletion sync
+    const sourceSessionIds = new Set<string>();
 
     // Migrate each row
     const result: MigrationResult = {
@@ -386,12 +482,14 @@ export async function migrateAgendaFromSource(): Promise<Response> {
       total: rows.length,
       created: 0,
       updated: 0,
+      deleted: 0,
       skipped: 0,
       failed: 0,
       errors: [],
     };
 
     for (const sourceRow of rows) {
+      sourceSessionIds.add(sourceRow.session_id);
       const migrationResult = await migrateAgendaItem(source, target, sourceRow);
 
       if (migrationResult.error) {
@@ -412,9 +510,18 @@ export async function migrateAgendaFromSource(): Promise<Response> {
       }
     }
 
+    // Sync deletions: remove target rows that no longer exist in source
+    console.log("[MIGRATION] Starting deletion synchronization");
+    const deleteResult = await syncDeletions(target, sourceSessionIds);
+    result.deleted = deleteResult.deleted;
+    if (deleteResult.failed > 0) {
+      result.success = false;
+      result.errors.push(...deleteResult.deleteErrors);
+    }
+
     console.log("[MIGRATION] Completed");
     console.log(
-      `[MIGRATION] Summary: ${result.created} created, ${result.updated} updated, ${result.failed} failed out of ${result.total}`,
+      `[MIGRATION] Summary: ${result.created} created, ${result.updated} updated, ${result.deleted} deleted, ${result.failed} failed out of ${result.total}`,
     );
 
     return ok("Migration completed", result);
