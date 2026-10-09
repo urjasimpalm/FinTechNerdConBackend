@@ -25,5 +25,6 @@ set description = 'Enter a new NerdCon world and scan the QR code to earn XP.'
 where id = 5;
 
 update public.missions
-set description = 'Find Simon, Colton, or Joy. Snap your nerdiest photo together and share it on social with #FintechNerdCon #NerdCon #Fintech. They''ll share a QR code for you to scan to redeem XP.'
+set title = 'Nerd Flex',
+    description = 'Find Simon, Colton, or Joy. Snap your nerdiest photo together and share it on social with #FintechNerdCon #NerdCon #Fintech. They''ll share a QR code for you to scan to redeem XP.'
 where id = 6;
