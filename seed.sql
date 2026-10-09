@@ -3,21 +3,15 @@
 -- Guilds are names only: the app shows the list as picker options with no copy
 -- beneath them, so description is left null.
 insert into public.guilds (id, name) overriding system value values
-  (1, 'AI & Agentic Systems'),
-  (2, 'Banking'),
-  (3, 'Payments'),
-  (4, 'Digital Currency & Stablecoins'),
-  (5, 'Lending'),
-  (6, 'Investing & Wealth'),
-  (7, 'Embedded Finance'),
-  (8, 'Fraud, Identity & Risk'),
-  (9, 'Compliance & Regulation'),
-  (10, 'Product & Engineering'),
-  (11, 'Data & Infrastructure'),
-  (12, 'Cross-Border Finance'),
-  (13, 'Growth & Go-to-Market'),
-  (14, 'Venture Capital & Startups'),
-  (15, 'Bank-Fintech Partnerships')
+  (1, 'AI & Agents'),
+  (2, 'Banking & Partnerships'),
+  (3, 'Payments & Stablecoins'),
+  (4, 'Lending & Credit'),
+  (5, 'Wealth & Investing'),
+  (6, 'Fraud, Identity & Risk'),
+  (7, 'Compliance & Regulation'),
+  (8, 'Product, Data & Infrastructure'),
+  (9, 'Startups, VC & Growth')
 on conflict (name) do nothing;
 
 -- configs holds four config.md types on one shared id sequence, so rows are
@@ -27,8 +21,8 @@ on conflict (name) do nothing;
 -- Only user_type carries a description — it is the one picker whose options need
 -- explaining to the user.
 insert into public.configs (type, name, description) values
-  ('user_type', 'Builder', 'I create products, tools, and systems.'),
-  ('user_type', 'Operator', 'I run and optimize processes to keep things moving.'),
+  ('user_type', 'Builder', 'I build products, tools, and systems.'),
+  ('user_type', 'Operator', 'I keep things running and make them run better.'),
   ('user_type', 'Explorer', 'I discover new ideas, markets, and opportunities.'),
   ('event-quest', 'Main Quests', null),
   ('event-quest', 'Side Quests', null),

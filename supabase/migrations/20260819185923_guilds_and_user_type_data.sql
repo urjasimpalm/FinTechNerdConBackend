@@ -61,7 +61,7 @@ update public.guilds set description = null where description is not null;
 
 insert into public.configs (type, name, description)
 values
-  ('user_type', 'Builder', 'I create products, tools, and systems.'),
-  ('user_type', 'Operator', 'I run and optimize processes to keep things moving.'),
+  ('user_type', 'Builder', 'I build products, tools, and systems.'),
+  ('user_type', 'Operator', 'I keep things running and make them run better.'),
   ('user_type', 'Explorer', 'I discover new ideas, markets, and opportunities.')
 on conflict (type, name) do update set description = excluded.description;
