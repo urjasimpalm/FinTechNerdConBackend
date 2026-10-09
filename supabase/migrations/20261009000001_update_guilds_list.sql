@@ -4,7 +4,10 @@
 -- Delete guilds 10-15 that are no longer needed
 delete from public.guilds where id > 9;
 
--- Update the names of guilds 1-9 using a single statement to avoid unique constraint conflicts
+-- Use temporary unique names to avoid unique constraint conflicts during the rename
+update public.guilds set name = concat('__temp_', id, '__') where id between 1 and 9;
+
+-- Update to final names
 update public.guilds
 set name = case id
   when 1 then 'AI & Agents'
