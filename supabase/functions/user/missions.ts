@@ -47,8 +47,7 @@ export async function listMissions(url: URL, viewerId: string): Promise<Response
   const catalogQuery = service
     .from("missions")
     .select("id, code, title, description, points, is_repeatable, max_completions, is_active")
-    .order("sort_order")
-    .order("id");
+    .order("id", { ascending: true });
 
   const [catalog, progress, standing] = await Promise.all([
     includeInactive ? catalogQuery : catalogQuery.eq("is_active", true),
