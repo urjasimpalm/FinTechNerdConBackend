@@ -38,12 +38,12 @@ insert into public.configs (type, name, description) values
 on conflict (type, name) do update set description = excluded.description;
 
 insert into public.missions (id, title, description, points) overriding system value values
-  (1, 'Book Your First Quest', 'Add an offsite event to your schedule.', 50),
-  (2, 'Add a session to your schedule', 'Check in to a Main Quest or Side Quest Stage session and level up your knowledge.', 50),
-  (3, 'Visit an Activation', 'Explore a sponsor activation in the Activation Hall.', 50),
-  (4, 'Connect with a New Nerd', 'Make a new connection through the event app with a fellow attendee.', 50),
-  (5, 'Explore a New Zone', 'Visit one of NerdCon''s themed worlds and discover what''s inside.', 50),
-  (6, 'Nerd Flex', 'Find Simon, Colton, or Joy, snap a gloriously nerdy photo together (high-five, goofy grin, swag, props, or your best geeky pose), and share it on LinkedIn or your favorite social platform using #FintechNerdCon.', 50),
+  (1, 'Book Your First Quest', 'Add a bonus quest to your schedule to earn XP for this mission.', 50),
+  (2, 'Add a content session to your schedule', 'Add any content session to your schedule to earn XP for this mission.', 50),
+  (3, 'Explore a sponsor activation in the Activation Hall', 'Visit a sponsor activation on the show floor and scan the QR code to earn XP.', 50),
+  (4, 'Connect with a Nerd', 'Go to the People tab and connect with a fellow nerd in the app.', 50),
+  (5, 'Explore a New Zone', 'Enter a new NerdCon world and scan the QR code to earn XP.', 50),
+  (6, 'Nerd Flex', 'Find Simon, Colton, or Joy. Snap your nerdiest photo together and share it on social with #FintechNerdCon #NerdCon #Fintech. They''ll share a QR code for you to scan to redeem XP.', 50),
   (7, 'Quest Master', 'Complete every core mission.', 50)
 on conflict (id) do nothing;
 
