@@ -92,10 +92,10 @@ jobs:
             exit 1
           fi
 
-          if [ -z "$SUPABASE_DB_PASSWORD" ]; then
-            echo "Supabase database password is missing." >&2
-            exit 1
-          fi
+          # if [ -z "$SUPABASE_DB_PASSWORD" ]; then
+          #   echo "Supabase database password is missing." >&2
+          #   exit 1
+          # fi
 
           if [ -z "$PROJECT_REF" ]; then
             echo "Supabase project reference is missing." >&2
