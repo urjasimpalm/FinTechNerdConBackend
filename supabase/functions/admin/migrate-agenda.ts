@@ -310,13 +310,43 @@ async function syncDeletions(
 }
 
 /**
+ * Deep equality for column values. Null and undefined count as equal, and object
+ * key order is ignored so jsonb round-trips do not look like changes.
+ */
+function valuesEqual(a: unknown, b: unknown): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, i) => valuesEqual(item, b[i]));
+  }
+
+  if (typeof a === "object" && typeof b === "object") {
+    const aObj = a as Record<string, unknown>;
+    const bObj = b as Record<string, unknown>;
+    const keys = new Set([...Object.keys(aObj), ...Object.keys(bObj)]);
+    return [...keys].every((key) => valuesEqual(aObj[key], bObj[key]));
+  }
+
+  return a === b;
+}
+
+/**
+ * Columns from the new agenda row whose value differs from the stored target row.
+ */
+function changedColumns(agendaRow: Record<string, unknown>, targetRow: Record<string, unknown>): string[] {
+  return Object.keys(agendaRow).filter((column) => !valuesEqual(agendaRow[column], targetRow[column]));
+}
+
+/**
  * Migrate a single agenda item.
  */
 async function migrateAgendaItem(
   sourceSvc: ReturnType<typeof sourceClient>,
   targetSvc: ReturnType<typeof targetClient>,
   sourceRow: SourceAgendaRow,
-): Promise<{ id: string; created: boolean; error?: string }> {
+): Promise<{ id: string; created: boolean; unchanged?: boolean; error?: string }> {
   console.log(`[MIGRATION] Processing session: "${sourceRow.title}" (${sourceRow.session_id})`);
 
   // Check if already migrated
@@ -386,6 +416,27 @@ async function migrateAgendaItem(
     let wasCreated = true;
 
     if (existing?.target_agenda_id) {
+      // Compare with the stored row first; only write when a column differs
+      const { data: targetRow, error: fetchError } = await targetSvc
+        .from("agenda")
+        .select("*")
+        .eq("id", existing.target_agenda_id)
+        .maybeSingle();
+
+      if (fetchError) {
+        logDbFailure("agenda fetch for compare", fetchError);
+        return { id: "", created: false, error: "Failed to load existing agenda" };
+      }
+
+      if (!targetRow) {
+        return { id: "", created: false, error: "Mapped agenda row no longer exists in target" };
+      }
+
+      if (changedColumns(agendaRow, targetRow as Record<string, unknown>).length === 0) {
+        console.log(`[MIGRATION] Agenda unchanged, skipped: "${sourceRow.title}"`);
+        return { id: existing.target_agenda_id, created: false, unchanged: true };
+      }
+
       // Update existing
       const { data, error } = await targetSvc
         .from("agenda")
@@ -504,6 +555,8 @@ export async function migrateAgendaFromSource(): Promise<Response> {
       } else if (migrationResult.created) {
         result.created++;
         console.log(`[MIGRATION] Created agenda for: "${sourceRow.title}"`);
+      } else if (migrationResult.unchanged) {
+        result.skipped++;
       } else {
         result.updated++;
         console.log(`[MIGRATION] Updated agenda for: "${sourceRow.title}"`);
@@ -521,7 +574,7 @@ export async function migrateAgendaFromSource(): Promise<Response> {
 
     console.log("[MIGRATION] Completed");
     console.log(
-      `[MIGRATION] Summary: ${result.created} created, ${result.updated} updated, ${result.deleted} deleted, ${result.failed} failed out of ${result.total}`,
+      `[MIGRATION] Summary: ${result.created} created, ${result.updated} updated, ${result.skipped} unchanged, ${result.deleted} deleted, ${result.failed} failed out of ${result.total}`,
     );
 
     return ok("Migration completed", result);
