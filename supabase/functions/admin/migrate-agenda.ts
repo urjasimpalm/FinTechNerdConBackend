@@ -70,67 +70,6 @@ type MigrationResult = {
 
 const MAX_DESCRIPTION = 2000;
 
-/** Source config id -> target config id. */
-type ConfigIdMap = Map<number, number>;
-
-/**
- * Config ids come from an identity column, so the same config has a different id in
- * each project. Map each source config to the target config with the same type and name.
- */
-async function loadConfigIdMap(
-  sourceSvc: ReturnType<typeof sourceClient>,
-  targetSvc: ReturnType<typeof targetClient>,
-): Promise<{ map?: ConfigIdMap; error?: string }> {
-  const { data: sourceConfigs, error: sourceError } = await sourceSvc
-    .from("configs")
-    .select("id, type, name");
-
-  if (sourceError) {
-    logDbFailure("source configs fetch", sourceError);
-    return { error: "Failed to fetch source configs" };
-  }
-
-  const { data: targetConfigs, error: targetError } = await targetSvc
-    .from("configs")
-    .select("id, type, name");
-
-  if (targetError) {
-    logDbFailure("target configs fetch", targetError);
-    return { error: "Failed to fetch target configs" };
-  }
-
-  const targetIdByKey = new Map<string, number>();
-  for (const config of targetConfigs ?? []) {
-    targetIdByKey.set(`${config.type}\u0000${config.name}`, config.id);
-  }
-
-  const map: ConfigIdMap = new Map();
-  for (const config of sourceConfigs ?? []) {
-    const targetId = targetIdByKey.get(`${config.type}\u0000${config.name}`);
-    if (targetId !== undefined) map.set(config.id, targetId);
-  }
-
-  return { map };
-}
-
-/**
- * Translate a source config id to its target id. Null stays null; an id with no
- * matching target config is an error, not a silent null.
- */
-function translateConfigId(
-  sourceId: number | null,
-  configIds: ConfigIdMap,
-): { id: number | null; error?: string } {
-  if (sourceId === null || sourceId === undefined) return { id: null };
-
-  const targetId = configIds.get(sourceId);
-  if (targetId === undefined) {
-    return { id: null, error: `No config in target matches source config id ${sourceId}` };
-  }
-
-  return { id: targetId };
-}
-
 /**
  * Generate speaker ID for target speakers table.
  * Format: speaker_${timestamp}_${randomString}
@@ -377,7 +316,6 @@ async function migrateAgendaItem(
   sourceSvc: ReturnType<typeof sourceClient>,
   targetSvc: ReturnType<typeof targetClient>,
   sourceRow: SourceAgendaRow,
-  configIds: ConfigIdMap,
 ): Promise<{ id: string; created: boolean; error?: string }> {
   console.log(`[MIGRATION] Processing session: "${sourceRow.title}" (${sourceRow.session_id})`);
 
@@ -416,15 +354,6 @@ async function migrateAgendaItem(
     return { id: "", created: false, error: "No speakers available after migration" };
   }
 
-  // Config ids must be the target's ids, not the source's
-  const questConfig = translateConfigId(sourceRow.event_quest_config_id, configIds);
-  const stageConfig = translateConfigId(sourceRow.stage_config_id, configIds);
-  const eventDayConfig = translateConfigId(sourceRow.event_day_config_id, configIds);
-  const configError = questConfig.error ?? stageConfig.error ?? eventDayConfig.error;
-  if (configError) {
-    return { id: "", created: false, error: configError };
-  }
-
   // Build agenda row for target
   const agendaRow: Record<string, unknown> = {
     name: sourceRow.title,
@@ -433,9 +362,9 @@ async function migrateAgendaItem(
     start_time: sourceRow.start_time || null,
     end_time: sourceRow.end_time || null,
     location: sourceRow.stage_name || null,
-    event_quest_config_id: questConfig.id,
-    stage_config_id: stageConfig.id,
-    event_day_config_id: eventDayConfig.id,
+    event_quest_config_id: sourceRow.event_quest_config_id || null,
+    stage_config_id: sourceRow.stage_config_id || null,
+    event_day_config_id: sourceRow.event_day_config_id || null,
     is_sponsored: sourceRow.sponsored || false,
     sponsor_name: sourceRow.sponsor_name || null,
     xp_value: sourceRow.xp_value || 0,
@@ -544,12 +473,6 @@ export async function migrateAgendaFromSource(): Promise<Response> {
     const rows = (sourceRows ?? []) as SourceAgendaRow[];
     console.log(`[MIGRATION] Source records found: ${rows.length}`);
 
-    const configLookup = await loadConfigIdMap(source, target);
-    if (configLookup.error || !configLookup.map) {
-      return fail(configLookup.error ?? "Failed to load config ids", 500);
-    }
-    const configIds = configLookup.map;
-
     // Track source session IDs for deletion sync
     const sourceSessionIds = new Set<string>();
 
@@ -567,7 +490,7 @@ export async function migrateAgendaFromSource(): Promise<Response> {
 
     for (const sourceRow of rows) {
       sourceSessionIds.add(sourceRow.session_id);
-      const migrationResult = await migrateAgendaItem(source, target, sourceRow, configIds);
+      const migrationResult = await migrateAgendaItem(source, target, sourceRow);
 
       if (migrationResult.error) {
         result.failed++;

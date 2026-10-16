@@ -314,7 +314,7 @@ supabase secrets set SOURCE_SUPABASE_SERVICE_ROLE_KEY "eyJhbGc..."
 **Cause**: Target `public.agenda` table constraint violation, or invalid config IDs
 
 **Fix**:
-1. Verify each source config (event_quest, stage-type, event-day) has a `public.configs` row in target with the same `type` and `name`. Config IDs are not copied; the function maps source IDs to target IDs by `(type, name)`. A missing match fails the row with `No config in target matches source config id ...`
+1. Verify config IDs (event_quest_config_id, stage_config_id, event_day_config_id) exist in target and are **identical** to source IDs
 2. Check that all required fields are present (name, speakers, etc.)
 3. Verify description is ≤ 650 characters
 4. Check `public.agenda_source_map` table exists (run migrations)
