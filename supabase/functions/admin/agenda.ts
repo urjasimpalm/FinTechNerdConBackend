@@ -341,6 +341,7 @@ function readUserTypes(
 const OPTIONAL_TEXT = [
   "location",
   "status",
+  "signup_url",
 ];
 
 /*
@@ -501,7 +502,7 @@ function timesAgree(row: Row, existing: Row | null): string | null {
 const EVENT_SELECT = `
   id, name, description, day, start_time, end_time,
   speakers, location, xp_value, is_sponsored, sponsor_name, is_invite_only, capacity,
-  sort_order, status,
+  sort_order, status, signup_url,
   event_quest_config_id, event_day_config_id, stage_config_id,
   created_at
 `;
