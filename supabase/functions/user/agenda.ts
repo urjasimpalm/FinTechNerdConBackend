@@ -49,7 +49,7 @@ const ON_SCHEDULE = ["saved", "approved"];
 const AGENDA_SELECT = `
   id, name, description, day, start_time, end_time,
   location, xp_value, is_sponsored, sponsor_name, is_invite_only, capacity,
-  sort_order, status,
+  sort_order, status, signup_url,
   speakers,
   event_quest_config_id, event_day_config_id, stage_config_id
 `;

@@ -41,6 +41,7 @@ type SourceAgendaRow = {
   stage_config_id: number | null;
   event_quest_config_id: number | null;
   event_day_config_id: number | null;
+  signup_url: string | null;
 };
 
 type TargetSpeaker = {
@@ -397,6 +398,7 @@ async function migrateAgendaItem(
     event_day_config_id: sourceRow.event_day_config_id || null,
     is_sponsored: sourceRow.sponsored || false,
     sponsor_name: sourceRow.sponsor_name || null,
+    signup_url: sourceRow.signup_url || null,
     xp_value: sourceRow.xp_value || 0,
     is_invite_only: sourceRow.invite_only || false,
     capacity: sourceRow.capacity || null,

@@ -1273,8 +1273,9 @@ a second call.
 - `speakers`: Array of speaker objects (min 1, max 4)
 - `is_sponsored`: Boolean (default false)
 - `sponsor_name`: String, required if is_sponsored=true
+- `signup_url`: String, optional external sign-up link (`null` when the event has none)
 
-All five are read-only apart from the caller's own schedule. Creating and editing
+All six are read-only apart from the caller's own schedule. Creating and editing
 events is admin-side — see
 [§11.7](#117-post-adminagendacreate-and-post-adminagendaupdate).
 
@@ -1444,7 +1445,7 @@ The same object as one element of `events` in §7.1. `404` if the id is unknown.
 `start_time`, `end_time`, `speaker_name`, `speaker_title`, `speaker_company`,
 `location`, `xp_value`, `is_sponsored`, `is_invite_only`, `capacity`,
 `event_quest_config_id`, `event_day_config_id`, `stage_config_id`, `sort_order`,
-`status`, `created_at`.
+`status`, `signup_url`, `created_at`.
 
 Tags are `agenda_tags (agenda_id, tag_id, is_primary)` and audiences are
 `agenda_user_types (agenda_id, user_type_config_id)`. Note: tags are separate from
@@ -1988,6 +1989,7 @@ legitimate draft.
 | `capacity` | integer | 1 or more, or `null` for no limit |
 | `is_sponsored` | boolean | Default `false`. If `true`, `sponsor_name` is required |
 | `sponsor_name` | string | Sponsor name/company. Required if `is_sponsored = true`. `null` clears it |
+| `signup_url` | string | External sign-up link for the session. `null` clears it |
 | `is_invite_only` | boolean | Default `false`. When `true` the app offers "express interest" instead of add-to-schedule ([§7.4](#74-post-useragendaschedule--add-remove-or-ask)) |
 | `sort_order` | integer | Breaks ties between events starting at the same moment, and orders events with no time at all. Default 0 |
 | `status` | string | Default `scheduled` |
@@ -2294,6 +2296,7 @@ mapping table.
 | `speakers` | `speakers` | Array of speaker objects; see below |
 | `stage_config_id`, `event_quest_config_id`, `event_day_config_id` | Same | IDs assumed identical across projects |
 | `sponsored`, `sponsor_name` | `is_sponsored`, `sponsor_name` | Validated |
+| `signup_url` | `signup_url` | Copied as-is; `null` when absent in source |
 | `xp_value`, `invite_only`, `capacity` | `xp_value`, `is_invite_only`, `capacity` | — |
 | `sort_order` | `sort_order` | — |
 | (default) | `status` | Set to `'scheduled'` for all migrated items |
