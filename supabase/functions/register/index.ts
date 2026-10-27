@@ -15,7 +15,7 @@
 // A successful registration answers with the status and message only — no session
 // and no profile row. The client sends the user to login afterwards.
 import { guardPost, integer, json, readJson, text } from "../_shared/http.ts";
-import { findUnknownGuild, readGuildIds, setGuilds } from "../_shared/profile.ts";
+import { findUnknownGuild, GUILD_RULE, readGuildIds, setGuilds } from "../_shared/profile.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -50,13 +50,13 @@ Deno.serve(async (req) => {
     }, 400);
   }
 
-  // Guilds are part of signing up: an attendee picks 1 to 3. `guild_id` is still
-  // read as a one-guild selection so an older client keeps working.
+  // Guilds are part of signing up: an attendee picks at least one. `guild_id` is
+  // still read as a one-guild selection so an older client keeps working.
   const guilds = readGuildIds(body.guild_ids ?? body.guild_id);
   if (guilds === null) {
     return json({
       success: false,
-      message: "guild_ids is required — pick between 1 and 3 guilds.",
+      message: `guild_ids is required. ${GUILD_RULE}`,
     }, 400);
   }
   if ("error" in guilds) {

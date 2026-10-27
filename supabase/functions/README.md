@@ -93,7 +93,7 @@ POST /functions/v1/register
   "password": "Passw0rd!23",
   "first_name": "Wasim",
   "last_name": "Raza",
-  // 1 to 3 guilds — required
+  // at least 1 guild — required
   "guild_ids": [1, 4],
 
   // all optional
@@ -111,7 +111,7 @@ POST /functions/v1/register
 | 201    | `{ success: true, message }`                         | Account created — status and message only, no session or profile                                                      |
 | 403    | `{ success: false, email_in_stack: false, message }` | Email is not on the attendee list — nothing was created                                                               |
 | 409    | `{ success: false, email_in_stack: true, message }`  | Already registered → send them to login                                                                               |
-| 400    | `{ success: false, message }`                        | Missing/invalid field, password under 8 chars, no guilds or more than 3, or a bad `guild_ids` / `user_type_config_id` |
+| 400    | `{ success: false, message }`                        | Missing/invalid field, password under 8 chars, no guilds, or a bad `guild_ids` / `user_type_config_id` |
 
 Registration returns no data of its own. The account is created already
 confirmed, so call `login` straight after a 201 to get the token and the
@@ -178,7 +178,7 @@ Authorization: Bearer <user token>
 
 Both use the `{ status, message, data }` envelope, and both answer with the same
 `data`: the profile columns, `nerd_number`, `user_type` as `{ id, name, description }`,
-the `guilds` array (1 to 3 of the same shape), plus `total_xp` and `rank` from
+the `guilds` array (at least 1, of the same shape), plus `total_xp` and `rank` from
 `public.leaderboard` (0 / null for a user with no completed missions).
 
 Editable by PUT: `first_name`, `last_name`, `user_type_config_id`, `guild_ids`,
@@ -186,10 +186,10 @@ Editable by PUT: `first_name`, `last_name`, `user_type_config_id`, `guild_ids`,
 clears an optional one, and anything else in the body (`nerd_number`, `email`,
 `is_admin`) is ignored rather than rejected.
 
-`guild_ids` replaces the whole selection and has to be 1 to 3 existing guild ids —
+`guild_ids` replaces the whole selection and has to be at least 1 existing guild id —
 it cannot be cleared. In JSON send an array; in a form repeat the key
 (`guild_ids=2`, `guild_ids=3`) or send `guild_ids=2,3`. The swap runs inside
-`public.set_user_guilds()`, so it is atomic and the 1..3 rule cannot be dodged.
+`public.set_user_guilds()`, so it is atomic and the minimum of 1 cannot be dodged.
 
 `profile_image` takes a `multipart/form-data` file part, a `data:` URI, an https
 URL, or `null`. Uploads land in the `profile-images` storage bucket under
@@ -213,7 +213,7 @@ caller from the token:
 | `POST user/connection/respond` | `{ request_id \| user_id, action: "accept" \| "reject" }`. Only the person who received it can answer                                                                                             |
 | `GET user/connection/list`     | `?status=pending` (default, your inbox), `sent`, `accepted` or `rejected`, with the same `search`                                                                                                 |
 | `GET user/guild/list`          | Every guild with `is_joined` for the caller, plus `joined_count` and `max_guilds`                                                                                                                 |
-| `POST user/guild/membership`   | `{ guild_id, action: "join" \| "leave" }`. Refused at 3 guilds on join and at 1 on leave — the same 1..3 rule the profile enforces, backed by set_user_guilds() and the user_guilds_limit trigger |
+| `POST user/guild/membership`   | `{ guild_id, action: "join" \| "leave" }`. Refused at 1 on leave; there is no cap on join. The minimum is enforced by set_user_guilds() |
 | `GET user/guild/members`       | `?guild_id=` — the same cards as `user/people`, scoped to one guild                                                                                                                               |
 
 `action` on the two merged routes can also be sent as `?action=...` on the query

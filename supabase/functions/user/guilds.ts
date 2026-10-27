@@ -4,9 +4,10 @@
 //   POST user/guild/membership  { "guild_id": 1, "action": "join" | "leave" }
 //
 // Joining and leaving are one route told apart by `action`, and both edit the
-// same 1..3 selection that shows on the profile, so they go through
-// public.set_user_guilds() — a join is refused once the caller is in 3 guilds and
-// a leave is refused at 1, because an attendee always belongs to at least one.
+// same selection that shows on the profile, so they go through
+// public.set_user_guilds() — a join is refused only if MAX_GUILDS is set and the
+// caller is already at it, and a leave is refused at MIN_GUILDS, because an
+// attendee always belongs to at least one.
 import { fail, integer, ok, text } from "../_shared/http.ts";
 import { fetchPage, likeTerm, pageMeta, readPage } from "../_shared/pagination.ts";
 import { MAX_GUILDS, MIN_GUILDS, setGuilds } from "../_shared/profile.ts";
@@ -89,10 +90,9 @@ export async function changeGuild(
   if (error) throw error;
   if (!guild) return fail(`Guild ${guildId} does not exist.`, 400);
 
-  // The cap is checked here so the answer names the guild and says what to do
-  // about it. public.set_user_guilds() re-checks 1..3 and the user_guilds_limit
-  // trigger enforces the ceiling in the database, so it holds even if a future
-  // caller skips this path.
+  // The cap (if any) is checked here so the answer names the guild and says what
+  // to do about it. public.set_user_guilds() re-checks the minimum, so it holds
+  // even if a future caller skips this path.
 
   const current = await myGuildIds(viewerId);
   const already = current.includes(guildId);
@@ -102,7 +102,7 @@ export async function changeGuild(
   if (join && already) return fail(`You are already in ${guild.name}.`, 409);
   if (!join && !already) return fail(`You are not in ${guild.name}.`, 409);
 
-  if (join && current.length >= MAX_GUILDS) {
+  if (join && MAX_GUILDS !== null && current.length >= MAX_GUILDS) {
     return fail(
       `You can belong to at most ${MAX_GUILDS} guilds. Leave one first.`,
       409,

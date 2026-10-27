@@ -115,7 +115,7 @@ POST /functions/v1/register
 | `password` | string | yes | Min 8 characters |
 | `first_name` | string | yes | Non-empty |
 | `last_name` | string | yes | Non-empty |
-| `guild_ids` | integer[] | **yes** | 1 to 3 `guilds.id` values, e.g. `[1, 4]`. `guild_id` (a single id) is still accepted as a one-guild selection |
+| `guild_ids` | integer[] | **yes** | At least 1 `guilds.id` value, e.g. `[1, 4]`. `guild_id` (a single id) is still accepted as a one-guild selection |
 | `user_type_config_id` | integer | no | `configs.id` where `type = 'user_type'` (Builder / Operator / Explorer) |
 | `company_name` | string | no | |
 | `job_title` | string | no | |
@@ -139,11 +139,11 @@ Success carries the status and message only — no token, no session, no profile
 | 201 | above | Go to login and sign in with the same credentials |
 | 403 | `{ "success": false, "email_in_stack": false, "message": "This email is not on the attendee list." }` | Show "not on the list"; nothing was created |
 | 409 | `{ "success": false, "email_in_stack": true, "message": "An account with this email already exists." }` | Send them to login |
-| 400 | `{ "success": false, "message": "..." }` | Show the message (missing field, short password, no guilds or more than 3, bad `guild_ids`/`user_type_config_id`) |
+| 400 | `{ "success": false, "message": "..." }` | Show the message (missing field, short password, no guilds, bad `guild_ids`/`user_type_config_id`) |
 | 500 | `{ "success": false, "message": "Something went wrong. Please try again." }` | Generic retry |
 
-Guilds are picked at sign-up: **at least 1, at most 3**. Sending none is a 400
-(`guild_ids is required — pick between 1 and 3 guilds.`), and so is sending four.
+Guilds are picked at sign-up: **at least 1, no upper limit**. Sending none is a 400
+(`guild_ids is required. Pick at least 1 guild.`).
 Nothing is created when the selection is rejected.
 
 The badge number is assigned here: every new profile gets the next `nerd_number`
@@ -372,9 +372,9 @@ Table `users`. Columns: `id`, `first_name`, `last_name`, `email`, `nerd_number`,
 `device_type`, `device_token`, `is_admin`, `created_at`, `updated_at`.
 
 Guilds are **many-to-many** through `user_guilds (user_id, guild_id)` — a user
-belongs to 1 to 3 of them, and the old `users.guild_id` column was dropped, so
+belongs to at least 1 of them, and the old `users.guild_id` column was dropped, so
 don't reference it. The selection is only writable through `register`,
-`PUT user/profile` and `user/guild/join|leave`, which is what keeps the 1..3 rule
+`PUT user/profile` and `user/guild/join|leave`, which is what keeps the at-least-1 rule
 true.
 
 **Admin accounts are invisible to attendees.** A user whose `is_admin` is true is
@@ -448,7 +448,7 @@ leaderboard. Uses the `{ status, message, data }` envelope.
 
 | Field | Notes |
 | --- | --- |
-| `guilds` | The user's 1 to 3 guilds as `{ id, name, description }`, ordered by id. Map to ids for the edit form: `data.guilds.map(g => g.id)` |
+| `guilds` | The user's guilds (at least 1) as `{ id, name, description }`, ordered by id. Map to ids for the edit form: `data.guilds.map(g => g.id)` |
 | `user_type` | `{ id, name, description }`, or `null` when the user has not picked one. The raw `user_type_config_id` is alongside it, so the edit form can prefill without unwrapping |
 | `profile_image` | Full public URL, or `null`. Renderable as-is — no signing |
 | `total_xp` | Points from completed missions. `0` for a user who has completed none |
@@ -476,7 +476,7 @@ ignored, so a client can send a whole profile object back untouched.
 an optional one (`user_type_config_id`, `company_name`, `job_title`,
 `profile_image`). `first_name` and `last_name` cannot be emptied.
 
-**Guilds.** `guild_ids` replaces the whole selection and must contain 1 to 3
+**Guilds.** `guild_ids` replaces the whole selection and must contain at least 1
 existing `guilds.id` values — there is no way to clear it, because an attendee
 always belongs to at least one guild. Leave the key out to keep the current
 selection. Duplicates collapse, so `[2, 2, 3]` is a two-guild selection, and a
@@ -535,13 +535,12 @@ JPEG, PNG, WebP and HEIC/HEIF are accepted, up to 5 MB.
 | Status | Body |
 | --- | --- |
 | 200 | Updated profile, same shape as GET |
-| 400 | `{ "status": "Error", "message": "...", "data": null }` — empty name, fewer than 1 or more than 3 guilds, unknown `guild_ids`/`user_type_config_id`, unsupported or oversized image, or nothing to update |
+| 400 | `{ "status": "Error", "message": "...", "data": null }` — empty name, no guilds, unknown `guild_ids`/`user_type_config_id`, unsupported or oversized image, or nothing to update |
 | 401 | Missing or expired token |
 | 404 | Profile row not found |
 
 Unknown ids are checked before the write, so the message names the id:
-`Guild 99 does not exist. Fetch the list from GET config/guilds.` A bad selection
-size says so too: `Pick between 1 and 3 guilds — 4 were sent.`
+`Guild 99 does not exist. Fetch the list from GET config/guilds.` An empty selection says so too: `Pick at least 1 guild.`
 
 ### 4.3 `GET user/profile/{id}` — another attendee's profile
 
@@ -738,14 +737,14 @@ as `?action=leave` on the query string).
       { "id": 2, "name": "Banking", "description": null, "is_joined": false }
     ],
     "joined_count": 1,
-    "max_guilds": 3,
+    "max_guilds": null,
     "search": null,
     "pagination": { "total": 15, "page": 1, "per_page": 20, "total_pages": 1, "has_next": false, "has_prev": false }
   }
 }
 ```
 
-`membership` edits the same 1–3 selection that shows on the profile, and answers
+`membership` edits the same selection that shows on the profile, and answers
 with the selection afterwards:
 
 ```json
@@ -757,13 +756,10 @@ with the selection afterwards:
 | 200 | The guilds the caller now belongs to |
 | 400 | `"action" must be "join" or "leave".`, `"guild_id" is required...` or `Guild 99 does not exist.` |
 | 409 | `You are already in Banking.` / `You are not in Banking.` |
-| 409 | `You can belong to at most 3 guilds. Leave one first.` — `action: "join"` |
 | 409 | `You have to belong to at least 1 guild. Join another one first.` — `action: "leave"` |
 
-**The cap of 3 is enforced three deep:** this route refuses the join,
-`public.set_user_guilds()` rejects any selection outside 1–3, and the
-`user_guilds_limit` trigger raises on a fourth row — so no path, including the
-service role, can push someone over.
+**There is no cap on guilds.** The minimum of 1 is enforced by
+`public.set_user_guilds()`, and this route refuses to leave the last guild.
 
 `guild/members` is `user/people` scoped to one guild — same card, same
 `search` / `user_type` / paging, and it also excludes you. `guild_id` is required.
@@ -786,7 +782,7 @@ Updatable fields: `first_name`, `last_name`, `user_type_config_id`,
 and `is_admin` are not in that list: a PATCH carrying either is rejected with
 `42501`, so use `PUT user/profile` for profile edits and leave those two alone.
 `device_type` / `device_token` are the one pair the PUT does not cover — patch
-them here. `user_guilds` is read-only over REST as well: the 1..3 rule is enforced
+them here. `user_guilds` is read-only over REST as well: the at-least-1 rule is enforced
 by `public.set_user_guilds()`, which only `register` and `PUT user/profile` can
 call, so guild changes have to go through the PUT.
 

@@ -1,13 +1,19 @@
 // One definition of "a profile" for every endpoint that returns one: login,
 // register's follow-up read, and GET/PUT user/profile.
 //
-// Guilds are a 1..3 selection held in public.user_guilds, so they arrive as a
-// nested embed and are flattened here into a plain `guilds` array. Changing the
-// selection goes through the set_user_guilds() RPC — see setGuilds below.
+// Guilds are a selection of at least MIN_GUILDS held in public.user_guilds, so they
+// arrive as a nested embed and are flattened here into a plain `guilds` array.
+// Changing the selection goes through the set_user_guilds() RPC — see setGuilds below.
 import { serviceClient } from "./supabase.ts";
 
 export const MIN_GUILDS = 1;
-export const MAX_GUILDS = 3;
+/** null means no upper limit. */
+export const MAX_GUILDS: number | null = null;
+
+/** The selection rule as shown to the user in error messages. */
+export const GUILD_RULE = MAX_GUILDS === null
+  ? `Pick at least ${MIN_GUILDS} guild.`
+  : `Pick between ${MIN_GUILDS} and ${MAX_GUILDS} guilds.`;
 
 /**
  * Admin accounts are event staff, not attendees: they are filtered out of every
@@ -89,7 +95,7 @@ export function readGuildIds(
 ): { ids: number[] } | { error: string } | null {
   if (value === undefined) return null;
   if (value === null) {
-    return { error: `Pick between ${MIN_GUILDS} and ${MAX_GUILDS} guilds.` };
+    return { error: GUILD_RULE };
   }
 
   let raw: unknown[];
@@ -98,7 +104,7 @@ export function readGuildIds(
   } else if (typeof value === "string") {
     const trimmed = value.trim();
     if (trimmed === "") {
-      return { error: `Pick between ${MIN_GUILDS} and ${MAX_GUILDS} guilds.` };
+      return { error: GUILD_RULE };
     }
     if (trimmed.startsWith("[")) {
       try {
@@ -129,7 +135,10 @@ export function readGuildIds(
     if (!ids.includes(asNumber)) ids.push(asNumber);
   }
 
-  if (ids.length < MIN_GUILDS || ids.length > MAX_GUILDS) {
+  if (ids.length < MIN_GUILDS) {
+    return { error: GUILD_RULE };
+  }
+  if (MAX_GUILDS !== null && ids.length > MAX_GUILDS) {
     return {
       error: `Pick between ${MIN_GUILDS} and ${MAX_GUILDS} guilds — ${ids.length} were sent.`,
     };
