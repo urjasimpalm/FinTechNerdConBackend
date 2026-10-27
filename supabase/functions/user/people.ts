@@ -21,11 +21,10 @@ type ListOptions = {
   /** Only people in this guild. */
   guildId: number | null;
   /**
-   * Invited attendees who have not registered, in their own `attendees` array.
-   * true for the unfiltered people list, false when a filter excludes them (they have
-   * no user type or guilds), and null where the endpoint has no attendees at all.
+   * Append invited attendees who have not registered after the registered people.
+   * Attendees have no user type or guilds, so this is only for the unfiltered list.
    */
-  includeAttendees: boolean | null;
+  includeAttendees: boolean;
   message: (total: number) => string;
 };
 
@@ -100,27 +99,30 @@ async function listPeople(
     return { ...person, connection, is_connected: connection.status === "connected" };
   });
 
-  const body: Record<string, unknown> = {
-    people: registered,
-    search: options.search,
-    pagination: pageMeta(result.total, page),
-  };
-
-  // Attendees are their own list, paged with the same page and per_page, so the
-  // `people` array and its `pagination` are exactly what they were before.
-  if (options.includeAttendees !== null) {
-    const found = options.includeAttendees
-      ? await attendeesFor(options.search, page)
-      : { rows: [], total: 0 };
+  // Attendees follow the registered people in the same array, so the page is filled
+  // from them only once the registered rows run out. `total` counts both.
+  let attendees: Record<string, unknown>[] = [];
+  let total = result.total;
+  if (options.includeAttendees) {
+    const found = await attendeesFor(
+      options.search,
+      page,
+      result.total,
+      result.rows.length,
+    );
     if ("error" in found) {
       console.error("attendee list failed", found.error);
       return fail("Something went wrong. Please try again.", 500);
     }
-    body.attendees = found.rows.map(shapeAttendee);
-    body.attendee_pagination = pageMeta(found.total, page);
+    attendees = found.rows.map(shapeAttendee);
+    total += found.total;
   }
 
-  return ok(options.message(result.total), body);
+  return ok(options.message(total), {
+    people: [...registered, ...attendees],
+    search: options.search,
+    pagination: pageMeta(total, page),
+  });
 }
 
 /** GET user/people?search=&user_type=&guild_id=&page=&per_page= */
@@ -179,7 +181,7 @@ export async function getGuildMembers(url: URL, viewerId: string): Promise<Respo
     search: url.searchParams.get("search")?.trim() || null,
     userType: integer(url.searchParams.get("user_type")),
     guildId,
-    includeAttendees: null,
+    includeAttendees: false,
     message: (total) =>
       total === 1
         ? `1 other member of ${guild.name}.`
