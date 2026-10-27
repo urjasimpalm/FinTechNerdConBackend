@@ -1,34 +1,28 @@
 /*
- * Production has mission codes on the wrong rows: each code sits one row off from its
- * title (e.g. 'Nerd Flex' carries visit_activation, 'Visit an Activation' carries
- * nerd_flex). mint_qr_codes() looks missions up by code, so codes minted for one
- * mission would award another.
+ * Production has mission codes on the wrong rows: each code sits one row off from
+ * its mission (e.g. id 6 'Nerd Flex' carries visit_activation). mint_qr_codes()
+ * looks missions up by code, so codes minted for one mission would award another.
  *
- * Re-points every code by title, the same mapping 20260822000002_missions_frd.sql
- * uses. Two steps: missions_code_key is a unique index, so a direct swap of codes
+ * Ids 1..7 are pinned by seed.sql, and production uses those same ids and titles,
+ * so the codes are set by id. Matching by title would miss ids 2, 3 and 4, whose
+ * titles differ from the FRD sheet wording.
+ *
+ * Two steps: missions_code_key is a unique index, so a direct swap of codes
  * between rows can fail mid-update.
  */
 update public.missions
   set code = null
-  where lower(btrim(title)) in (
-    'book your first quest',
-    'add a session to your schedule',
-    'visit an activation',
-    'connect with a new nerd',
-    'explore a new zone',
-    'nerd flex',
-    'quest master'
-  );
+  where id between 1 and 7;
 
 update public.missions m
   set code = v.code
   from (values
-    ('book your first quest',           'book_first_quest'),
-    ('add a session to your schedule',  'add_session'),
-    ('visit an activation',             'visit_activation'),
-    ('connect with a new nerd',         'connect_nerd'),
-    ('explore a new zone',              'explore_zone'),
-    ('nerd flex',                       'nerd_flex'),
-    ('quest master',                    'quest_master')
-  ) as v (title, code)
-  where lower(btrim(m.title)) = v.title;
+    (1, 'book_first_quest'),
+    (2, 'add_session'),
+    (3, 'visit_activation'),
+    (4, 'connect_nerd'),
+    (5, 'explore_zone'),
+    (6, 'nerd_flex'),
+    (7, 'quest_master')
+  ) as v (id, code)
+  where m.id = v.id;
