@@ -7,6 +7,7 @@ import { fail, integer, ok } from "../_shared/http.ts";
 import { fetchPage, likeTerm, pageMeta, readPage } from "../_shared/pagination.ts";
 import { ATTENDEE_ONLY, PERSON_SELECT, shapeProfile } from "../_shared/profile.ts";
 import { statusesFor } from "../_shared/connections.ts";
+import { attendeesFor, shapeAttendee } from "../_shared/attendees.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 /** `user_type=all` is the same as leaving it out — say so rather than 400ing. */
@@ -19,6 +20,11 @@ type ListOptions = {
   userType: number | null;
   /** Only people in this guild. */
   guildId: number | null;
+  /**
+   * Append invited attendees who have not registered after the registered people.
+   * Attendees have no user type or guilds, so this is only for the unfiltered list.
+   */
+  includeAttendees: boolean;
   message: (total: number) => string;
 };
 
@@ -86,17 +92,31 @@ async function listPeople(
     result.rows.map((row) => row.id as string),
   );
 
-  const people = result.rows.map((row) => {
+  const registered = result.rows.map((row) => {
     const person = shapeProfile(row);
     const connection = statuses.get(row.id as string) ??
       { status: "none" as const, request_id: null };
     return { ...person, connection, is_connected: connection.status === "connected" };
   });
 
-  return ok(options.message(result.total), {
-    people,
+  // Attendees follow the registered people, so the page is filled from them only
+  // once the registered rows run out. `total` counts both.
+  let attendees: Record<string, unknown>[] = [];
+  let total = result.total;
+  if (options.includeAttendees) {
+    const found = await attendeesFor(options.search, page, result.total, result.rows.length);
+    if ("error" in found) {
+      console.error("attendee list failed", found.error);
+      return fail("Something went wrong. Please try again.", 500);
+    }
+    attendees = found.rows.map(shapeAttendee);
+    total += found.total;
+  }
+
+  return ok(options.message(total), {
+    people: [...registered, ...attendees],
     search: options.search,
-    pagination: pageMeta(result.total, page),
+    pagination: pageMeta(total, page),
   });
 }
 
@@ -130,6 +150,7 @@ export async function getPeople(url: URL, viewerId: string): Promise<Response> {
     search,
     userType,
     guildId,
+    includeAttendees: userType === null && guildId === null,
     message: (total) =>
       total === 1 ? "1 attendee found." : `${total} attendees found.`,
   });
@@ -155,6 +176,7 @@ export async function getGuildMembers(url: URL, viewerId: string): Promise<Respo
     search: url.searchParams.get("search")?.trim() || null,
     userType: integer(url.searchParams.get("user_type")),
     guildId,
+    includeAttendees: false,
     message: (total) =>
       total === 1
         ? `1 other member of ${guild.name}.`
