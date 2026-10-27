@@ -1,5 +1,6 @@
-// Invited attendees who have not registered yet. GET user/people lists them after
-// the registered users, in the same `people` array, as the same person card.
+// Invited attendees who have not registered yet. GET user/people returns them in
+// their own `attendees` array, next to the registered `people`, as the same person
+// card shape.
 //
 // They are read from public.directory_attendees, which already leaves out anyone
 // with an account. Nothing here can connect to an attendee, since there is no
@@ -10,27 +11,9 @@ import { serviceClient } from "./supabase.ts";
 export const ATTENDEE_SELECT = "id, first_name, last_name, company_name, job_title";
 
 /**
- * Which slice of the attendee list falls on this page, given the registered people
- * that come before it in the combined list.
- *
- * `offset` is where the attendees start (0 once the page is past the registered
- * people), and `limit` is how many attendee cards are still needed to fill the page.
- */
-export function attendeeWindow(
-  page: Page,
-  registeredTotal: number,
-  registeredOnPage: number,
-): { offset: number; limit: number } {
-  return {
-    offset: Math.max(0, page.offset - registeredTotal),
-    limit: Math.max(0, page.perPage - registeredOnPage),
-  };
-}
-
-/**
  * An attendee as a person card. Same keys, in the same order, as a registered user
  * from PERSON_SELECT, with the fields an attendee cannot have set to null, or to the
- * empty structure, so existing clients read it without special-casing.
+ * empty structure, so a client can render either list with the same code.
  */
 export function shapeAttendee(row: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -50,17 +33,13 @@ export function shapeAttendee(row: Record<string, unknown>): Record<string, unkn
 }
 
 /**
- * The attendees that fall on `page`, plus the total number of matching attendees
- * (so the caller can add it to the registered total).
+ * One page of the attendees who have not registered, with the same search and paging
+ * as the registered list, and the exact count of matching attendees.
  */
 export async function attendeesFor(
   search: string | null,
   page: Page,
-  registeredTotal: number,
-  registeredOnPage: number,
 ): Promise<{ rows: Record<string, unknown>[]; total: number } | { error: unknown }> {
-  const window = attendeeWindow(page, registeredTotal, registeredOnPage);
-
   const build = (headOnly: boolean) => {
     let query = serviceClient()
       .from("directory_attendees")
@@ -72,16 +51,5 @@ export async function attendeesFor(
     return query;
   };
 
-  // Nothing left to show on this page, so only the count is needed.
-  if (window.limit === 0) {
-    const { count, error } = await build(true);
-    if (error) return { error };
-    return { rows: [], total: count ?? 0 };
-  }
-
-  return await fetchPage(build, {
-    page: page.page,
-    perPage: window.limit,
-    offset: window.offset,
-  });
+  return await fetchPage(build, page);
 }
