@@ -2,8 +2,12 @@
 -- migration maps source config ids onto by (type, name). Ids are assigned by the
 -- identity column, so only type and name are fixed here. Safe to re-run.
 
+-- Production's configs table has no unique (type, name) constraint (it drifted from
+-- 0005_configs.sql), so this inserts only the rows that are missing instead of
+-- relying on on conflict.
 insert into public.configs (type, name, description)
-values
+select v.type, v.name, v.description
+from (values
   ('event-quest', 'Main Quests', null),
   ('event-quest', 'Side Quests', null),
   ('event-quest', 'Bonus Quests', null),
@@ -22,4 +26,8 @@ values
   ('stage-type', 'Bootcamp', null),
   ('stage-type', 'Roundtables', null),
   ('stage-type', 'Meetups', null)
-on conflict (type, name) do nothing;
+) as v (type, name, description)
+where not exists (
+  select 1 from public.configs c
+  where c.type = v.type and c.name = v.name
+);
