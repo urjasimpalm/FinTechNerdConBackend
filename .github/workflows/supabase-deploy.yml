@@ -112,7 +112,10 @@ jobs:
       # Apply pending SQL migrations from supabase/migrations.
       - name: Deploy database migrations
         run: |
-          supabase db push
+          # TEMPORARY: --include-all applies 20261016000001_seed_agenda_configs.sql,
+          # which production skipped because a later migration was already applied.
+          # It is idempotent (on conflict do nothing). Remove the flag once deployed.
+          supabase db push --include-all
 
       # Deploy only the explicitly listed Edge Functions.
       # Add new function names to this list when they are ready to deploy.
