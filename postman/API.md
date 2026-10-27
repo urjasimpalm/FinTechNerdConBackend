@@ -2469,8 +2469,8 @@ There is no endpoint for this on purpose — the codes are created once, before 
 event, by whoever is printing them:
 
 ```sql
-select * from public.mint_qr_codes('activation', 'Activation', 12, 'visit_activation');
-select * from public.mint_qr_codes('zone',       'Zone',        8, 'explore_zone');
+select * from public.mint_qr_codes('activation', 'Activation', 13, 'visit_activation');
+select * from public.mint_qr_codes('zone',       'Zone',        6, 'explore_zone');
 select * from public.mint_qr_codes('nerd_flex',  'Nerd Flex lanyard', 1, 'nerd_flex');
 
 -- A session check-in code, worth that event's xp_value:

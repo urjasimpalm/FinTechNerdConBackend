@@ -1620,7 +1620,7 @@
                 "scan"
               ]
             },
-            "description": "Claim a printed code. `code` is the slug from `https://<app>/q/<code>` \u2014 the whole scanned URL is accepted too, and `?code=` works instead of a body.\n\nMint codes to print with `select * from public.mint_qr_codes('zone', 'Zone', 8, 'explore_zone');` then set the `qr_code` collection variable to one of the returned slugs.\n\n**A repeat scan is a 200, not an error** \u2014 `counted: false` with `\"You have already scanned this one.\"`. Branch on `counted`, not the status code. 404 = unknown code, 409 = code switched off.",
+            "description": "Claim a printed code. `code` is the slug from `https://<app>/q/<code>` \u2014 the whole scanned URL is accepted too, and `?code=` works instead of a body.\n\nMint codes to print with `select * from public.mint_qr_codes('zone', 'Zone', 6, 'explore_zone');` then set the `qr_code` collection variable to one of the returned slugs.\n\n**A repeat scan is a 200, not an error** \u2014 `counted: false` with `\"You have already scanned this one.\"`. Branch on `counted`, not the status code. 404 = unknown code, 409 = code switched off.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"code\": \"{{qr_code}}\"\n}",
