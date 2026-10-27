@@ -26,3 +26,24 @@ update public.missions m
     (7, 'quest_master')
   ) as v (id, code)
   where m.id = v.id;
+
+/*
+ * QR codes minted before this fix were attached to the mission whose code was
+ * wrong at the time, so their mission_id is wrong too. Point each kind at its mission:
+ *
+ *   activation -> 3 (Visit an Activation, visit_activation)
+ *   zone       -> 5 (Explore a New Zone, explore_zone)
+ *   nerd_flex  -> 6 (Nerd Flex, nerd_flex)
+ */
+update public.qr_codes
+  set mission_id = case kind
+    when 'activation' then 3
+    when 'zone'       then 5
+    when 'nerd_flex'  then 6
+  end
+  where kind in ('activation', 'zone', 'nerd_flex')
+    and mission_id is distinct from case kind
+    when 'activation' then 3
+    when 'zone'       then 5
+    when 'nerd_flex'  then 6
+  end;
