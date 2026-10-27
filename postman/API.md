@@ -608,9 +608,10 @@ Authorization: Bearer <token>
 | `guild_id` | Only people in that guild, or `all` / omitted for every guild |
 | `page`, `per_page` | See [§3.1](#31-pagination). Default 20 per page, max 100 |
 
-Registered users come first in `people`. When `user_type` is `all` or left out, and no
-`guild_id` is set, invited attendees who have not registered yet follow them in the
-same array, and count towards `pagination.total`. Any other `user_type` or a
+Attendees come first in `people`. When `user_type` is `all` or left out, and no
+`guild_id` is set, the invited attendees who have not registered yet are listed at the
+start of the array, followed by the registered users. Both count towards
+`pagination.total`, and each page takes attendees first, then registered users. Any other `user_type` or a
 `guild_id` returns registered users only, since attendees have no user type or
 guilds. An attendee card has the same fields as a registered one, with
 `nerd_number`, `profile_image`, `user_type` and `user_type_config_id` set to `null`,

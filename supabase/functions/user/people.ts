@@ -7,7 +7,7 @@ import { fail, integer, ok } from "../_shared/http.ts";
 import { fetchPage, likeTerm, pageMeta, readPage } from "../_shared/pagination.ts";
 import { ATTENDEE_ONLY, PERSON_SELECT, shapeProfile } from "../_shared/profile.ts";
 import { statusesFor } from "../_shared/connections.ts";
-import { attendeesFor, shapeAttendee } from "../_shared/attendees.ts";
+import { attendeesFor, registeredWindow, shapeAttendee } from "../_shared/attendees.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 /** `user_type=all` is the same as leaving it out — say so rather than 400ing. */
@@ -81,7 +81,24 @@ async function listPeople(
     return query;
   };
 
-  const result = await fetchPage(build, page);
+  // Attendees come first in `people`, so they take the start of the page, and the
+  // registered people fill whatever room is left after them.
+  let attendees: Record<string, unknown>[] = [];
+  let attendeeTotal = 0;
+  if (options.includeAttendees) {
+    const found = await attendeesFor(options.search, page);
+    if ("error" in found) {
+      console.error("attendee list failed", found.error);
+      return fail("Something went wrong. Please try again.", 500);
+    }
+    attendees = found.rows.map(shapeAttendee);
+    attendeeTotal = found.total;
+  }
+
+  const window = registeredWindow(page, attendeeTotal, attendees.length);
+  const result = window.limit === 0
+    ? await countOnly(build)
+    : await fetchPage(build, { page: page.page, perPage: window.limit, offset: window.offset });
   if ("error" in result) {
     console.error("people list failed", result.error);
     return fail("Something went wrong. Please try again.", 500);
@@ -99,30 +116,24 @@ async function listPeople(
     return { ...person, connection, is_connected: connection.status === "connected" };
   });
 
-  // Attendees follow the registered people in the same array, so the page is filled
-  // from them only once the registered rows run out. `total` counts both.
-  let attendees: Record<string, unknown>[] = [];
-  let total = result.total;
-  if (options.includeAttendees) {
-    const found = await attendeesFor(
-      options.search,
-      page,
-      result.total,
-      result.rows.length,
-    );
-    if ("error" in found) {
-      console.error("attendee list failed", found.error);
-      return fail("Something went wrong. Please try again.", 500);
-    }
-    attendees = found.rows.map(shapeAttendee);
-    total += found.total;
-  }
-
+  const total = attendeeTotal + result.total;
   return ok(options.message(total), {
-    people: [...registered, ...attendees],
+    people: [...attendees, ...registered],
     search: options.search,
     pagination: pageMeta(total, page),
   });
+}
+
+/**
+ * The count of a query without its rows, for a page that has nothing left to show.
+ * Same result shape as fetchPage, so the caller handles both the same way.
+ */
+async function countOnly(
+  build: Parameters<typeof fetchPage>[0],
+): Promise<{ rows: Record<string, unknown>[]; total: number } | { error: unknown }> {
+  const { count, error } = await build(true);
+  if (error) return { error };
+  return { rows: [], total: count ?? 0 };
 }
 
 /** GET user/people?search=&user_type=&guild_id=&page=&per_page= */

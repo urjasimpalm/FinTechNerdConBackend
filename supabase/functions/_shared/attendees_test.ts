@@ -1,6 +1,6 @@
 // Run with: deno test supabase/functions/_shared/attendees_test.ts
 import { assertEquals } from "jsr:@std/assert@1";
-import { attendeeWindow, shapeAttendee } from "./attendees.ts";
+import { registeredWindow, shapeAttendee } from "./attendees.ts";
 import { shapeProfile } from "./profile.ts";
 
 const page = (offset: number, perPage: number) => ({
@@ -9,20 +9,20 @@ const page = (offset: number, perPage: number) => ({
   offset,
 });
 
-Deno.test("a page entirely within the registered people takes no attendees", () => {
-  assertEquals(attendeeWindow(page(0, 20), 50, 20), { offset: 0, limit: 0 });
+Deno.test("a page entirely of attendees takes no registered people", () => {
+  assertEquals(registeredWindow(page(0, 20), 50, 20), { offset: 0, limit: 0 });
 });
 
-Deno.test("a page straddling the boundary fills the rest from the attendees", () => {
-  assertEquals(attendeeWindow(page(40, 20), 50, 10), { offset: 0, limit: 10 });
+Deno.test("a page straddling the attendees fills the rest from the registered people", () => {
+  assertEquals(registeredWindow(page(40, 20), 50, 10), { offset: 0, limit: 10 });
 });
 
-Deno.test("a page past the registered people starts partway into the attendees", () => {
-  assertEquals(attendeeWindow(page(60, 20), 50, 0), { offset: 10, limit: 20 });
+Deno.test("a page past the attendees starts partway into the registered people", () => {
+  assertEquals(registeredWindow(page(60, 20), 50, 0), { offset: 10, limit: 20 });
 });
 
-Deno.test("with no registered people, the attendees are paged on their own", () => {
-  assertEquals(attendeeWindow(page(20, 20), 0, 0), { offset: 20, limit: 20 });
+Deno.test("with no attendees, the registered people are paged on their own", () => {
+  assertEquals(registeredWindow(page(20, 20), 0, 0), { offset: 20, limit: 20 });
 });
 
 Deno.test("an attendee card has the same keys, in the same order, as a registered card", () => {

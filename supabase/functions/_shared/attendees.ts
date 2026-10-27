@@ -10,20 +10,21 @@ import { serviceClient } from "./supabase.ts";
 export const ATTENDEE_SELECT = "id, first_name, last_name, company_name, job_title";
 
 /**
- * Which slice of the attendee list falls on this page, given the registered people
- * that come before it in the combined list.
+ * Which slice of the registered people falls on this page, when the attendees come
+ * first in the combined list.
  *
- * `offset` is where the attendees start (0 once the page is past the registered
- * people), and `limit` is how many attendee cards are still needed to fill the page.
+ * `offset` is where the registered people start (0 once the page is past the
+ * attendees), and `limit` is how many registered cards are still needed to fill the
+ * page.
  */
-export function attendeeWindow(
+export function registeredWindow(
   page: Page,
-  registeredTotal: number,
-  registeredOnPage: number,
+  attendeeTotal: number,
+  attendeesOnPage: number,
 ): { offset: number; limit: number } {
   return {
-    offset: Math.max(0, page.offset - registeredTotal),
-    limit: Math.max(0, page.perPage - registeredOnPage),
+    offset: Math.max(0, page.offset - attendeeTotal),
+    limit: Math.max(0, page.perPage - attendeesOnPage),
   };
 }
 
@@ -50,17 +51,14 @@ export function shapeAttendee(row: Record<string, unknown>): Record<string, unkn
 }
 
 /**
- * The attendees that fall on `page` of the combined list, plus the total number of
- * matching attendees (so the caller can add it to the registered total).
+ * One page of the attendees who have not registered, with the same search and paging
+ * as the registered list, and the exact count of matching attendees. Attendees come
+ * first in `people`, so this page is the page itself.
  */
 export async function attendeesFor(
   search: string | null,
   page: Page,
-  registeredTotal: number,
-  registeredOnPage: number,
 ): Promise<{ rows: Record<string, unknown>[]; total: number } | { error: unknown }> {
-  const window = attendeeWindow(page, registeredTotal, registeredOnPage);
-
   const build = (headOnly: boolean) => {
     let query = serviceClient()
       .from("directory_attendees")
@@ -72,16 +70,5 @@ export async function attendeesFor(
     return query;
   };
 
-  // Nothing left to show on this page, so only the count is needed.
-  if (window.limit === 0) {
-    const { count, error } = await build(true);
-    if (error) return { error };
-    return { rows: [], total: count ?? 0 };
-  }
-
-  return await fetchPage(build, {
-    page: page.page,
-    perPage: window.limit,
-    offset: window.offset,
-  });
+  return await fetchPage(build, page);
 }
