@@ -25,12 +25,11 @@ additional_redirect_urls = []
 jwt_expiry = 3600
 enable_signup = true
 
-# auth/reset-password takes the 6-digit code from this email. The stock template
-# only contains the {{ .ConfirmationURL }} deep link, which the code-based flow
-# can't use, so the recovery mail is overridden to include {{ .Token }}.
-# Remember the hosted project has its own copy: Authentication → Emails →
-# Reset Password must include {{ .Token }} there too, or the deployed
-# reset-password will only work with `token_hash` from the link.
+# The recovery mail includes {{ .Token }} for auth/reset-password and a
+# {{ .ConfirmationURL }} link that verifies the token and redirects to the web
+# app's /reset-password page. The hosted project has its own copy: Authentication →
+# Emails → Reset Password must match this template, and the web app's origin
+# must be in Redirect URLs, or the link falls back to the Site URL.
 [auth.email.template.recovery]
 subject = "Reset your FinTechNerdCon password"
 content_path = "./supabase/templates/recovery.html"
