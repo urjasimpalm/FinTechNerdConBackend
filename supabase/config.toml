@@ -25,6 +25,12 @@ additional_redirect_urls = []
 jwt_expiry = 3600
 enable_signup = true
 
+# The reset code is 6 digits: auth/reset-password expects it, and the recovery
+# template shows {{ .Token }}. The hosted project's Email OTP length must also be
+# 6 (Authentication → Providers → Email), or the email shows an 8-digit code.
+[auth.email]
+otp_length = 6
+
 # The recovery mail includes {{ .Token }} for auth/reset-password and a
 # {{ .ConfirmationURL }} link that verifies the token and redirects to the web
 # app's /reset-password page. The hosted project has its own copy: Authentication →
