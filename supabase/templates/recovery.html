@@ -1,18 +1,16 @@
 <!--
   Password reset email.
 
-  {{ .Token }} is the 6-digit code the app asks for on its reset screen.
-
-  {{ .ConfirmationURL }} is the Supabase verify link. It checks the token, then
-  redirects to the redirect_to passed to auth/forgot-password (the web app's
-  /reset-password page), which receives the session in the URL fragment. That
-  redirect URL must be listed under Authentication → URL Configuration.
+  {{ .Token }} is the 6-digit code. The link opens the web app's /reset-password
+  page with the email and code in the query string. The page sends them to
+  auth/reset-password with the new password. The link does not go through the
+  Supabase verify endpoint, so it does not use up the code.
 -->
 <h2>Reset your password</h2>
 
 <p>We received a request to reset your password. Follow the link below to choose a new one.</p>
 
-<p><a href="{{ .ConfirmationURL }}">Reset password</a></p>
+<p><a href="https://staging.d355pub0o9ml9c.amplifyapp.com/reset-password?email={{ .Email }}&amp;token={{ .Token }}">Reset password</a></p>
 
 <p>Or enter this code in the app to choose a new password:</p>
 

@@ -31,11 +31,10 @@ enable_signup = true
 [auth.email]
 otp_length = 6
 
-# The recovery mail includes {{ .Token }} for auth/reset-password and a
-# {{ .ConfirmationURL }} link that verifies the token and redirects to the web
-# app's /reset-password page. The hosted project has its own copy: Authentication →
-# Emails → Reset Password must match this template, and the web app's origin
-# must be in Redirect URLs, or the link falls back to the Site URL.
+# The recovery mail links to the web app's /reset-password page with email and
+# token query params, and the same code is shown in the body. The link does not
+# use Supabase's verify endpoint. The hosted project has its own copy:
+# Authentication → Emails → Reset Password must match this template.
 [auth.email.template.recovery]
 subject = "Reset your FinTechNerdCon password"
 content_path = "./supabase/templates/recovery.html"
