@@ -10,12 +10,19 @@
 
 <p>We received a request to reset your password. Follow the link below to choose a new one.</p>
 
-<p><a href="https://staging.d355pub0o9ml9c.amplifyapp.com/reset-password?email={{ .Email }}&amp;token={{ .Token }}">Reset password</a></p>
+<p>
+  <a href="{{ .SiteURL }}/reset-password?email={{ .Email }}">
+    Reset password
+  </a>
+</p>
 
-<p>Or enter this code in the app to choose a new password:</p>
+<p>Or enter this code on the reset password page:</p>
 
-<p style="font-size: 28px; font-weight: bold; letter-spacing: 6px;">{{ .Token }}</p>
+<p style="font-size: 28px; font-weight: bold; letter-spacing: 6px;">
+  {{ .Token }}
+</p>
 
 <p>The code expires in one hour and can only be used once.</p>
 
 <p>If you didn't ask to reset your password, you can ignore this email.</p>
+
