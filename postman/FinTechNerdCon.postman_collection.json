@@ -775,7 +775,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/functions/v1/config/sponsors?search=&include_inactive=false",
+              "raw": "{{base_url}}/functions/v1/config/sponsors?search=&include_inactive=false&page=1&per_page=20",
               "host": [
                 "{{base_url}}"
               ],
@@ -793,10 +793,20 @@
                 {
                   "key": "include_inactive",
                   "value": "false"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "1-based page number. Default 1."
+                },
+                {
+                  "key": "per_page",
+                  "value": "20",
+                  "description": "Rows per page. Default 20, max 100. `limit` and `offset` are also accepted."
                 }
               ]
             },
-            "description": "The sponsor list, ordered by `sort_order` then name.\n\n- `search` \u2014 matches sponsor name or company name\n- `include_inactive` \u2014 `true` also returns retired sponsors (`is_active = false` is how one is taken down without deleting the row)\n\nNeeds no session (this function is `verify_jwt = false`, so the anon key in the `apikey` header is enough) and is CDN-cached for 5 minutes \u2014 the sponsor screen is public event content.\n\n**Not included in the bare `GET config` payload**, which is what the register screen calls before the user has a token. Use `GET config?type=sponsors,guilds` to get both in one request.\n\nThere is no write route: rows are managed in Studio or by the service role."
+            "description": "The sponsor list, ordered by name, paged.\n\n- `page` / `per_page` \u2014 1-based page and page size. Default 20 per page, max 100. `limit` / `offset` also work as aliases.\n- `search` \u2014 matches sponsor name\n- `include_inactive` \u2014 `true` also returns retired sponsors (`is_active = false` is how one is taken down without deleting the row)\n\nWhen the sponsor list is requested, the response carries a top-level `pagination` object: `total`, `page`, `per_page`, `total_pages`, `has_next`, `has_prev`. `data.sponsors` holds only the requested page. Out-of-range pages return an empty list rather than an error. A bad `page` or `per_page` is a 400.\n\nNeeds no session (this function is `verify_jwt = false`, so the anon key in the `apikey` header is enough) and is CDN-cached for 5 minutes \u2014 the sponsor screen is public event content.\n\n**Not included in the bare `GET config` payload**, which is what the register screen calls before the user has a token. Use `GET config?type=sponsors,guilds` to get both in one request.\n\nThere is no write route: rows are managed in Studio or by the service role."
           },
           "event": [
             {
@@ -810,9 +820,17 @@
                   "  pm.expect(body.success).to.be.true;",
                   "  pm.expect(body.data.sponsors).to.be.an('array');",
                   "});",
-                  "pm.test('ordered by sort_order', () => {",
-                  "  const orders = body.data.sponsors.map(s => s.sort_order);",
-                  "  pm.expect(orders).to.eql(orders.slice().sort((a, b) => a - b));",
+                  "pm.test('pagination describes the page', () => {",
+                  "  pm.expect(body.pagination).to.be.an('object');",
+                  "  pm.expect(body.pagination.page).to.eql(1);",
+                  "  pm.expect(body.pagination.per_page).to.eql(20);",
+                  "  pm.expect(body.pagination.has_prev).to.be.false;",
+                  "  pm.expect(body.data.sponsors.length).to.be.at.most(body.pagination.per_page);",
+                  "  pm.expect(body.data.sponsors.length).to.be.at.most(body.pagination.total);",
+                  "});",
+                  "pm.test('no sponsor repeats across pages', () => {",
+                  "  const ids = body.data.sponsors.map(s => s.id);",
+                  "  pm.expect(new Set(ids).size).to.eql(ids.length);",
                   "});",
                   "if (!body.data.sponsors.length) console.log('No sponsors yet \u2014 insert rows into public.sponsors.');"
                 ]
@@ -3584,11 +3602,6 @@
                   "type": "text"
                 },
                 {
-                  "key": "company_name",
-                  "value": "Acme Payments",
-                  "type": "text"
-                },
-                {
                   "key": "description",
                   "value": "Payment rails for the rest of us.",
                   "type": "text"
@@ -3599,14 +3612,14 @@
                   "type": "text"
                 },
                 {
-                  "key": "profile_image",
+                  "key": "logo",
                   "type": "file",
                   "src": [],
                   "description": "Select a JPEG/PNG/WebP/HEIC under 5 MB. Leave it unselected to keep the current logo."
                 }
               ]
             },
-            "description": "Adds a sponsor to `public.sponsors` \u2014 the list behind `GET config/sponsors` (**2. Config \u2192 Sponsors**). **Admin only.**\n\nOnly `name` is required; a logo and copy usually arrive later in the run-up to the event, so a row with just a name is a legitimate placeholder.\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| name | string | **Required on create.** The sponsor or contact name, up to 200 characters. Cannot be cleared |\n| company_name | string | Up to 200 characters. Empty (or `null` in JSON) clears it |\n| description | string | Up to 2000 characters. Empty clears it |\n| profile_image | file / string | The logo \u2014 see below |\n| is_active | boolean | Default `true`. `false` retires a sponsor without deleting the row \u2014 which is why there is no delete route |\n\n**The logo is the image itself, not a URL.** Three ways in, and all of them end with `profile_image` holding a public URL in the `sponsor-images` bucket:\n\n| How | What to send |\n| --- | --- |\n| A picked file | The `profile_image` file part of this request \u2014 select an image and it is uploaded |\n| A data URI | `profile_image` as `data:image/png;base64,\u2026`, in a form field or in JSON |\n| Already hosted | `profile_image` as an `http(s)` URL, which is stored as-is |\n\nLeaving the file part unselected means \"keep the current logo\" \u2014 it is not \"remove it\". Stored as `sponsor-images/<sponsor-id>/<upload-timestamp>.<ext>`, so a replaced logo is never served from a CDN cache of the old one, and replacing one deletes the file it replaced. `jpeg`, `png`, `webp`, `heic`, `heif`, up to 5 MB \u2014 anything else is a 400 naming the type. An empty value (or `null` in JSON) takes the logo down.\n\n**`sort_order` is not a parameter.** Display order is not something these routes decide: the column keeps its default of `0`, so the sponsor screen orders by name, and a deliberate ordering is set in Studio or SQL.\n\nThe row is written first and the image second, because the object is stored under the sponsor's id and the id is assigned by the insert. If the upload fails the row is deleted again rather than left behind \u2014 a 400, and nothing is created.\n\n- **200** `data` is the created sponsor, exactly as `GET config/sponsors` returns it, plus `created_at`\n- **400** a validation failure, naming the field, or an image that could not be stored\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false\n\nThe sponsor screen is public and CDN-cached for 5 minutes, so a new row can take that long to appear there."
+            "description": "Adds a sponsor to `public.sponsors` \u2014 the list behind `GET config/sponsors` (**2. Config \u2192 Sponsors**). **Admin only.**\n\nOnly `name` is required; a logo and copy usually arrive later in the run-up to the event, so a row with just a name is a legitimate placeholder.\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| name | string | **Required on create.** The sponsor or contact name, up to 200 characters. Cannot be cleared |\n| description | string | Up to 2000 characters. Empty clears it |\n| logo | file / string | The logo \u2014 see below |\n| is_active | boolean | Default `true`. `false` retires a sponsor without deleting the row \u2014 which is why there is no delete route |\n\n**The logo is the image itself, not a URL.** Three ways in, and all of them end with `logo` holding a public URL in the `sponsor-images` bucket:\n\n| How | What to send |\n| --- | --- |\n| A picked file | The `logo` file part of this request \u2014 select an image and it is uploaded |\n| A data URI | `logo` as `data:image/png;base64,\u2026`, in a form field or in JSON |\n| Already hosted | `logo` as an `http(s)` URL, which is stored as-is |\n\nLeaving the file part unselected means \"keep the current logo\" \u2014 it is not \"remove it\". Stored as `sponsor-images/<sponsor-id>/<upload-timestamp>.<ext>`, so a replaced logo is never served from a CDN cache of the old one, and replacing one deletes the file it replaced. `jpeg`, `png`, `webp`, `heic`, `heif`, up to 5 MB \u2014 anything else is a 400 naming the type. An empty value (or `null` in JSON) takes the logo down.\n\n**Ordering.** The sponsor screen orders sponsors by name (then id). There is no display-order column.\n\nThe row is written first and the image second, because the object is stored under the sponsor's id and the id is assigned by the insert. If the upload fails the row is deleted again rather than left behind \u2014 a 400, and nothing is created.\n\n- **200** `data` is the created sponsor, exactly as `GET config/sponsors` returns it, plus `created_at`\n- **400** a validation failure, naming the field, or an image that could not be stored\n- **401** no bearer token, or the anon key was sent instead of a user's\n- **403** signed in but `is_admin` is false\n\nThe sponsor screen is public and CDN-cached for 5 minutes, so a new row can take that long to appear there."
           },
           "event": [
             {
@@ -3621,16 +3634,13 @@
                   "    pm.expect(body.status).to.eql('Success');",
                   "    pm.expect(body.data.id).to.be.a('number');",
                   "    pm.expect(body.data.name).to.eql('Postman: Jane Okafor');",
-                  "    pm.expect(body.data.company_name).to.eql('Acme Payments');",
                   "    pm.expect(body.data.is_active).to.eql(true);",
-                  "    // Not settable through this route, so it stays at the column default.",
-                  "    pm.expect(body.data.sort_order).to.eql(0);",
                   "  });",
                   "  // Only asserted when a file was actually attached to the form.",
-                  "  if (body.data && body.data.profile_image) {",
+                  "  if (body.data && body.data.logo) {",
                   "    pm.test('logo is a public URL in the sponsor-images bucket', () => {",
-                  "      pm.expect(body.data.profile_image).to.include('/storage/v1/object/public/sponsor-images/');",
-                  "      pm.expect(body.data.profile_image).to.include(`/${body.data.id}/`);",
+                  "      pm.expect(body.data.logo).to.include('/storage/v1/object/public/sponsor-images/');",
+                  "      pm.expect(body.data.logo).to.include(`/${body.data.id}/`);",
                   "    });",
                   "  }",
                   "  pm.collectionVariables.set('created_sponsor_id', body.data.id);",
@@ -3680,11 +3690,6 @@
                   "type": "text"
                 },
                 {
-                  "key": "company_name",
-                  "value": "Acme Payments International",
-                  "type": "text"
-                },
-                {
                   "key": "description",
                   "value": "Payment rails for the rest of us. Now in 40 countries.",
                   "type": "text"
@@ -3695,14 +3700,14 @@
                   "type": "text"
                 },
                 {
-                  "key": "profile_image",
+                  "key": "logo",
                   "type": "file",
                   "src": [],
                   "description": "Select a JPEG/PNG/WebP/HEIC under 5 MB. Leave it unselected to keep the current logo."
                 }
               ]
             },
-            "description": "Edits a sponsor. **Admin only.** Takes the id from **Create a sponsor** above (`{{created_sponsor_id}}`).\n\n**Every field is editable** \u2014 the body below sends all of them, so disable the parts that should stay as they are. It is a patch: only the fields present are written, absent ones are left alone, and an empty value (or `null` in JSON) clears an optional field. Sending nothing but `id` is a 400 rather than a no-op.\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| id | integer | **Required.** The sponsor's id (`sponsor_id` is accepted too) |\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| name | string | **Required on create.** The sponsor or contact name, up to 200 characters. Cannot be cleared |\n| company_name | string | Up to 200 characters. Empty (or `null` in JSON) clears it |\n| description | string | Up to 2000 characters. Empty clears it |\n| profile_image | file / string | The logo \u2014 see below |\n| is_active | boolean | Default `true`. `false` retires a sponsor without deleting the row \u2014 which is why there is no delete route |\n\n**The logo is the image itself, not a URL.** Three ways in, and all of them end with `profile_image` holding a public URL in the `sponsor-images` bucket:\n\n| How | What to send |\n| --- | --- |\n| A picked file | The `profile_image` file part of this request \u2014 select an image and it is uploaded |\n| A data URI | `profile_image` as `data:image/png;base64,\u2026`, in a form field or in JSON |\n| Already hosted | `profile_image` as an `http(s)` URL, which is stored as-is |\n\nLeaving the file part unselected means \"keep the current logo\" \u2014 it is not \"remove it\". Stored as `sponsor-images/<sponsor-id>/<upload-timestamp>.<ext>`, so a replaced logo is never served from a CDN cache of the old one, and replacing one deletes the file it replaced. `jpeg`, `png`, `webp`, `heic`, `heif`, up to 5 MB \u2014 anything else is a 400 naming the type. An empty value (or `null` in JSON) takes the logo down.\n\n**`sort_order` is not a parameter.** Display order is not something these routes decide: the column keeps its default of `0`, so the sponsor screen orders by name, and a deliberate ordering is set in Studio or SQL.\n\nA new image replaces the old one and **the file it pointed at is deleted**, so retired logos do not accumulate. Only files in this sponsor's own folder are removed \u2014 an `http(s)` URL that lives elsewhere is never touched.\n\n**Taking a sponsor down** is `is_active` = `false`, which keeps the row and its history. There is no delete route.\n\n- **200** `data` is the sponsor as it now stands\n- **400** a validation failure, or nothing was sent to change\n- **404** no sponsor with that id\n- **401 / 403** as above"
+            "description": "Edits a sponsor. **Admin only.** Takes the id from **Create a sponsor** above (`{{created_sponsor_id}}`).\n\n**Every field is editable** \u2014 the body below sends all of them, so disable the parts that should stay as they are. It is a patch: only the fields present are written, absent ones are left alone, and an empty value (or `null` in JSON) clears an optional field. Sending nothing but `id` is a 400 rather than a no-op.\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| id | integer | **Required.** The sponsor's id (`sponsor_id` is accepted too) |\n\n| Parameter | Type | Notes |\n| --- | --- | --- |\n| name | string | **Required on create.** The sponsor or contact name, up to 200 characters. Cannot be cleared |\n| description | string | Up to 2000 characters. Empty clears it |\n| logo | file / string | The logo \u2014 see below |\n| is_active | boolean | Default `true`. `false` retires a sponsor without deleting the row \u2014 which is why there is no delete route |\n\n**The logo is the image itself, not a URL.** Three ways in, and all of them end with `logo` holding a public URL in the `sponsor-images` bucket:\n\n| How | What to send |\n| --- | --- |\n| A picked file | The `logo` file part of this request \u2014 select an image and it is uploaded |\n| A data URI | `logo` as `data:image/png;base64,\u2026`, in a form field or in JSON |\n| Already hosted | `logo` as an `http(s)` URL, which is stored as-is |\n\nLeaving the file part unselected means \"keep the current logo\" \u2014 it is not \"remove it\". Stored as `sponsor-images/<sponsor-id>/<upload-timestamp>.<ext>`, so a replaced logo is never served from a CDN cache of the old one, and replacing one deletes the file it replaced. `jpeg`, `png`, `webp`, `heic`, `heif`, up to 5 MB \u2014 anything else is a 400 naming the type. An empty value (or `null` in JSON) takes the logo down.\n\n**Ordering.** The sponsor screen orders sponsors by name (then id). There is no display-order column.\n\nA new image replaces the old one and **the file it pointed at is deleted**, so retired logos do not accumulate. Only files in this sponsor's own folder are removed \u2014 an `http(s)` URL that lives elsewhere is never touched.\n\n**Taking a sponsor down** is `is_active` = `false`, which keeps the row and its history. There is no delete route.\n\n- **200** `data` is the sponsor as it now stands\n- **400** a validation failure, or nothing was sent to change\n- **404** no sponsor with that id\n- **401 / 403** as above"
           },
           "event": [
             {
@@ -3716,13 +3721,12 @@
                   "  pm.test('every field sent was written', () => {",
                   "    pm.expect(String(body.data.id)).to.eql(pm.collectionVariables.get('created_sponsor_id'));",
                   "    pm.expect(body.data.name).to.eql('Postman: Jane Okafor (edited)');",
-                  "    pm.expect(body.data.company_name).to.eql('Acme Payments International');",
                   "    pm.expect(body.data.description).to.include('40 countries');",
                   "  });",
                   "  // Only asserted when a file was actually attached to the form.",
-                  "  if (body.data && body.data.profile_image) {",
+                  "  if (body.data && body.data.logo) {",
                   "    pm.test('logo is a public URL in the sponsor-images bucket', () => {",
-                  "      pm.expect(body.data.profile_image).to.include('/storage/v1/object/public/sponsor-images/');",
+                  "      pm.expect(body.data.logo).to.include('/storage/v1/object/public/sponsor-images/');",
                   "    });",
                   "  }",
                   "} else {",
