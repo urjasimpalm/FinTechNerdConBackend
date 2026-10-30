@@ -5,20 +5,17 @@
 //
 // The app only reads sponsors — GET config/sponsors, which is public and
 // CDN-cached — so these are back-office routes, the same shape as ./agenda.ts.
-// Until now public.sponsors was Studio-only (see the table comment in
-// 20260820200835_sponsors.sql).
 //
-// The logo is sent as **the image itself**, not a URL: post multipart/form-data
-// with the file under `profile_image` (or JSON with a data URI) and it is stored
-// in the sponsor-images bucket under `<sponsor-id>/<timestamp>.<ext>`, with
-// public.sponsors.profile_image set to the public URL that comes back. An
-// already-hosted http(s) URL is still accepted, for a logo that lives elsewhere.
-// See 20260830000001_sponsor_images_storage.sql and _shared/images.ts.
+// A sponsor is a name, a description and a logo. The logo is sent as **the image
+// itself**, not a URL: post multipart/form-data with the file under `logo` (or JSON
+// with a data URI) and it is stored in the sponsor-images bucket under
+// `<sponsor-id>/<timestamp>.<ext>`, with public.sponsors.logo set to the public URL
+// that comes back. An already-hosted http(s) URL is still accepted, for a logo that
+// lives elsewhere. See 20261030000001_sponsors_name_description_logo.sql and
+// _shared/images.ts.
 //
-// public.sponsors.sort_order is deliberately *not* settable here: display order is
-// not something these routes decide. The column keeps its default of 0, so the
-// sponsor screen orders by name (the tie-break in sponsors_sort_idx), and a
-// deliberate ordering is set in Studio or SQL.
+// There is no delete route: is_active = false takes a sponsor off the screen and
+// keeps the row. Removing one for good is done in Studio or SQL.
 import { readBoolean } from "../_shared/fields.ts";
 import { fail, integer, ok, text } from "../_shared/http.ts";
 import { removeReplacedImage, resolveImage } from "../_shared/images.ts";
@@ -27,19 +24,16 @@ import { logDbFailure, serviceClient } from "../_shared/supabase.ts";
 const BUCKET = "sponsor-images";
 
 const MAX_NAME = 200;
-const MAX_COMPANY = 200;
 const MAX_DESCRIPTION = 2000;
 
 type Row = Record<string, unknown>;
 
 /** The columns GET config/sponsors returns, plus created_at. */
-const SPONSOR_SELECT =
-  "id, name, company_name, description, profile_image, sort_order, is_active, created_at";
+const SPONSOR_SELECT = "id, name, description, logo, is_active, created_at";
 
-/** name, company_name and description: length-capped text that null clears. */
+/** name and description: length-capped text that null clears. */
 const TEXT_FIELDS: [string, number][] = [
   ["name", MAX_NAME],
-  ["company_name", MAX_COMPANY],
   ["description", MAX_DESCRIPTION],
 ];
 
@@ -48,9 +42,8 @@ const FIELDS = [
   "id",
   "sponsor_id",
   "name",
-  "company_name",
   "description",
-  "profile_image",
+  "logo",
   "is_active",
 ];
 
@@ -80,11 +73,11 @@ async function readSubmission(req: Request): Promise<Submission | { error: strin
     let file: File | null = null;
     for (const key of FIELDS) {
       // getAll rather than get: a form can legitimately carry both a file part and
-      // a text part under `profile_image` (a picker that also keeps the current
-      // URL, say), and a picked file wins whichever order they arrive in.
+      // a text part under `logo` (a picker that also keeps the current URL, say),
+      // and a picked file wins whichever order they arrive in.
       for (const value of form.getAll(key)) {
         if (value instanceof File) {
-          if (key !== "profile_image") {
+          if (key !== "logo") {
             return { error: `${key} must be a text field, not a file.` };
           }
           // Some clients always append the file part, empty when nothing was
@@ -117,8 +110,8 @@ async function readSubmission(req: Request): Promise<Submission | { error: strin
 }
 
 /*
- * The sponsor's text columns and its is_active flag. The image is handled apart
- * from these, because storing it needs the sponsor's id.
+ * The sponsor's text columns. The logo is handled apart from these, because
+ * storing it needs the sponsor's id.
  *
  * Only `name` is required on create — a logo and copy arrive later in the run-up
  * to the event, so a row with just a name is a legitimate placeholder. On update
@@ -171,7 +164,7 @@ function readColumns(
 /**
  * POST admin/sponsor/create
  *
- * The row first, then the image, because the object is stored under the sponsor's
+ * The row first, then the logo, because the object is stored under the sponsor's
  * id and identity ids are assigned by the insert. If the upload fails the row is
  * deleted again rather than left behind as a sponsor nobody asked for — the same
  * rollback shape as admin/agenda/create.
@@ -196,15 +189,15 @@ export async function createSponsor(req: Request): Promise<Response> {
   }
 
   const sponsorId = String(data.id);
-  const hasImage = submission.file !== null || submission.fields.has("profile_image");
+  const hasImage = submission.file !== null || submission.fields.has("logo");
   if (!hasImage) return ok(`Added "${data.name}".`, data);
 
   const image = await resolveImage(
     BUCKET,
     sponsorId,
     submission.file,
-    submission.fields.get("profile_image") ?? null,
-    '"profile_image"',
+    submission.fields.get("logo") ?? null,
+    '"logo"',
   );
   if ("error" in image) {
     const { error: cleanupError } = await service.from("sponsors").delete().eq(
@@ -223,17 +216,17 @@ export async function createSponsor(req: Request): Promise<Response> {
 
   const saved = await service
     .from("sponsors")
-    .update({ profile_image: image.url })
+    .update({ logo: image.url })
     .eq("id", data.id)
     .select(SPONSOR_SELECT)
     .single();
 
   if (saved.error || !saved.data) {
     // The file is in the bucket but the row does not point at it. Say so rather
-    // than reporting a clean create: the image is what the admin will look for.
-    logDbFailure("sponsor image save", saved.error);
+    // than reporting a clean create: the logo is what the admin will look for.
+    logDbFailure("sponsor logo save", saved.error);
     return fail(
-      `"${data.name}" was created but its image could not be saved. Try setting it again with admin/sponsor/update.`,
+      `"${data.name}" was created but its logo could not be saved. Try setting it again with admin/sponsor/update.`,
       500,
     );
   }
@@ -246,7 +239,7 @@ export async function createSponsor(req: Request): Promise<Response> {
  *
  * A patch: only the keys present are written, absent keys are left alone, and an
  * explicit null (or an empty value in a form) clears an optional field. A new
- * image replaces the old one and the file it pointed at is deleted, so retired
+ * logo replaces the old one and the file it pointed at is deleted, so retired
  * logos do not accumulate in the bucket.
  */
 export async function updateSponsor(req: Request): Promise<Response> {
@@ -263,14 +256,14 @@ export async function updateSponsor(req: Request): Promise<Response> {
   const columns = readColumns(submission.fields, false);
   if ("error" in columns) return fail(columns.error, 400);
 
-  const hasImage = submission.file !== null || submission.fields.has("profile_image");
+  const hasImage = submission.file !== null || submission.fields.has("logo");
   if (Object.keys(columns.row).length === 0 && !hasImage) {
     return fail("Nothing to change — send at least one field to update.", 400);
   }
 
   const service = serviceClient();
   // Read first: a 404 has to be reported before anything is uploaded, and the old
-  // image URL is needed to clean up the file it points at.
+  // logo URL is needed to clean up the file it points at.
   const existing = await service
     .from("sponsors")
     .select(SPONSOR_SELECT)
@@ -288,11 +281,11 @@ export async function updateSponsor(req: Request): Promise<Response> {
       BUCKET,
       String(identifier),
       submission.file,
-      submission.fields.get("profile_image") ?? null,
-      '"profile_image"',
+      submission.fields.get("logo") ?? null,
+      '"logo"',
     );
     if ("error" in image) return fail(image.error, 400);
-    columns.row.profile_image = image.url;
+    columns.row.logo = image.url;
   }
 
   const { data, error } = await service
@@ -313,8 +306,8 @@ export async function updateSponsor(req: Request): Promise<Response> {
     await removeReplacedImage(
       BUCKET,
       String(identifier),
-      existing.data.profile_image,
-      data.profile_image,
+      existing.data.logo,
+      data.logo,
     );
   }
 

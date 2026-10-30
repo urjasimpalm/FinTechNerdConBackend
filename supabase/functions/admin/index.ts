@@ -319,7 +319,7 @@ async function saveAnnouncement(
   }
 
   // The Home screen's floor plan. A public URL, not the bytes — upload the image
-  // to a storage bucket first, the same as public.sponsors.profile_image. null
+  // to a storage bucket first, the same as public.sponsors.logo. null
   // removes the map.
   if ("map_image" in body) {
     const raw = body.map_image;

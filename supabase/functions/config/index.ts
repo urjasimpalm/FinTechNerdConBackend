@@ -32,10 +32,8 @@ const SPONSORS_KEY = "sponsors";
 // answer for them and not the "unknown type" typo case below.
 const TABLE_KEYS = [GUILDS_KEY, TAGS_KEY, SPONSORS_KEY];
 
-// Display order, then name as the tie-break — matching the sponsors_sort_idx in
-// 20260820200835_sponsors.sql, so paging or truncating the list is stable.
-const SPONSOR_COLUMNS =
-  "id, name, company_name, description, profile_image, sort_order, is_active";
+// Alphabetical by name, matching sponsors_name_idx in 20261030000001_sponsors_name_description_logo.sql.
+const SPONSOR_COLUMNS = "id, name, description, logo, is_active";
 
 // Reference data changes rarely, so let clients and the CDN hold it briefly.
 const cacheHeaders = { "Cache-Control": "public, max-age=300" };
@@ -116,13 +114,10 @@ Deno.serve(async (req) => {
           let query = service
             .from("sponsors")
             .select(SPONSOR_COLUMNS)
-            .order("sort_order")
             .order("name");
           if (!includeInactive) query = query.eq("is_active", true);
-          // Name or company — what someone types looking for a booth.
           if (sponsorSearch) {
-            const term = likeTerm(sponsorSearch);
-            query = query.or(`name.ilike.${term},company_name.ilike.${term}`);
+            query = query.ilike("name", likeTerm(sponsorSearch));
           }
           return query;
         })()
