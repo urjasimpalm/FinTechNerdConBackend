@@ -5,6 +5,11 @@
 //   /functions/v1/config/sponsors     → the sponsor list
 //   /functions/v1/config/user_type    → one config type only
 //   /functions/v1/config?type=user_type,event-day
+//   /functions/v1/config/sponsors?page=2&per_page=20&search=
+//
+// The sponsor list is paged (page/per_page, or limit/offset; default 20 per page,
+// max 100). When it is requested, the response carries a top-level `pagination`
+// object describing that list.
 //
 // Serves the reference data the app needs to render pickers and its static
 // screens: guilds, agenda tags, the sponsor list, and the public.configs rows grouped by their
@@ -21,7 +26,7 @@
 // users under RLS.
 import { corsHeaders } from "../_shared/cors.ts";
 import { json } from "../_shared/http.ts";
-import { likeTerm } from "../_shared/pagination.ts";
+import { fetchPage, likeTerm, pageMeta, readPage } from "../_shared/pagination.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const GUILDS_KEY = "guilds";
@@ -91,7 +96,29 @@ Deno.serve(async (req) => {
     );
     const sponsorSearch = url.searchParams.get("search")?.trim() || null;
 
-    const [guildsResult, tagsResult, configsResult, sponsorsResult] = await Promise.all([
+    // Paging only applies to the sponsor list. Checked here rather than up top so a
+    // bad page/per_page on another type does not fail the request.
+    const sponsorPage = wantsSponsors ? readPage(url.searchParams) : null;
+    if (sponsorPage && "error" in sponsorPage) {
+      return cached({ success: false, message: sponsorPage.error }, 400);
+    }
+
+    const sponsorQuery = (headOnly: boolean) => {
+      let query = service
+        .from("sponsors")
+        .select(SPONSOR_COLUMNS, { count: "exact", head: headOnly })
+        // id breaks ties between sponsors with the same name, so pages neither
+        // repeat nor skip a row.
+        .order("name")
+        .order("id");
+      if (!includeInactive) query = query.eq("is_active", true);
+      if (sponsorSearch) {
+        query = query.ilike("name", likeTerm(sponsorSearch));
+      }
+      return query;
+    };
+
+    const [guildsResult, tagsResult, configsResult] = await Promise.all([
       wantsGuilds
         ? service.from("guilds").select("id, name, description").order("id")
         : Promise.resolve({ data: [], error: null }),
@@ -109,25 +136,17 @@ Deno.serve(async (req) => {
               : query;
           })()
         : Promise.resolve({ data: [], error: null }),
-      wantsSponsors
-        ? (() => {
-          let query = service
-            .from("sponsors")
-            .select(SPONSOR_COLUMNS)
-            .order("name");
-          if (!includeInactive) query = query.eq("is_active", true);
-          if (sponsorSearch) {
-            query = query.ilike("name", likeTerm(sponsorSearch));
-          }
-          return query;
-        })()
-        : Promise.resolve({ data: [], error: null }),
     ]);
 
-    if (guildsResult.error || tagsResult.error || configsResult.error || sponsorsResult.error) {
+    const sponsorsResult = wantsSponsors && sponsorPage && !("error" in sponsorPage)
+      ? await fetchPage(sponsorQuery, sponsorPage)
+      : { rows: [], total: 0 };
+
+    if (guildsResult.error || tagsResult.error || configsResult.error || "error" in sponsorsResult) {
       console.error(
         "config lookup failed",
-        guildsResult.error ?? tagsResult.error ?? configsResult.error ?? sponsorsResult.error,
+        guildsResult.error ?? tagsResult.error ?? configsResult.error ??
+          ("error" in sponsorsResult ? sponsorsResult.error : null),
       );
       return json(
         { success: false, message: "Something went wrong. Please try again." },
@@ -140,7 +159,7 @@ Deno.serve(async (req) => {
     const data: Record<string, unknown[]> = {};
     if (wantsGuilds) data[GUILDS_KEY] = guildsResult.data ?? [];
     if (wantsTags) data[TAGS_KEY] = tagsResult.data ?? [];
-    if (wantsSponsors) data[SPONSORS_KEY] = sponsorsResult.data ?? [];
+    if (wantsSponsors) data[SPONSORS_KEY] = sponsorsResult.rows;
     // description is carried through for every type so the shape is uniform;
     // only user_type has copy today, so it is null elsewhere.
     for (const row of (configsResult.data ?? []) as Array<{
@@ -180,6 +199,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Only present when the sponsor list was asked for; it describes that list.
+    if (sponsorPage && !("error" in sponsorPage)) {
+      return cached({
+        success: true,
+        data,
+        pagination: pageMeta(sponsorsResult.total, sponsorPage),
+      });
+    }
     return cached({ success: true, data });
   } catch (err) {
     console.error("config failed", err);
