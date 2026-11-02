@@ -317,6 +317,8 @@ type ListFilters = {
   questConfigId: number | null;
   tagId: number | null;
   userTypeId: number | null;
+  /** A configs.id of type stage-type. */
+  stageTypeId: number | null;
   search: string | null;
   /** Restrict to my schedule (or, for the schedule route, to my rows). */
   onlyStatuses: string[] | null;
@@ -374,6 +376,13 @@ function readFilters(
   );
   if ("error" in userType) return userType;
 
+  const stageType = optionalId(
+    params,
+    "stage_type",
+    "stage_type must be a configs.id where type = 'stage-type'.",
+  );
+  if ("error" in stageType) return stageType;
+
   const savedRaw = params.get("saved")?.trim().toLowerCase() ?? "";
   const sponsoredRaw = params.get("sponsored")?.trim().toLowerCase() ?? "";
 
@@ -384,6 +393,7 @@ function readFilters(
     questConfigId,
     tagId: tag.value,
     userTypeId: userType.value,
+    stageTypeId: stageType.value,
     search: params.get("search")?.trim() || null,
     onlyStatuses: savedRaw === "true" || savedRaw === "1" ? ON_SCHEDULE : null,
     sponsoredOnly: sponsoredRaw === "true" || sponsoredRaw === "1",
@@ -482,6 +492,9 @@ async function listEvents(
     if (filters.questConfigId !== null) {
       query = query.eq("event_quest_config_id", filters.questConfigId);
     }
+    if (filters.stageTypeId !== null) {
+      query = query.eq("stage_config_id", filters.stageTypeId);
+    }
     if (filters.sponsoredOnly) query = query.eq("is_sponsored", true);
     if (filters.search) {
       // Name, speaker or location — what someone types into an agenda search box.
@@ -518,7 +531,7 @@ async function listEvents(
   });
 }
 
-/** GET user/agenda?day=&quest=&tag_id=&user_type=&search=&saved=&sponsored= */
+/** GET user/agenda?day=&quest=&tag_id=&user_type=&stage_type=&search=&saved=&sponsored= */
 export async function getAgenda(url: URL, viewerId: string): Promise<Response> {
   const filters = readFilters(url.searchParams);
   if ("error" in filters) return fail(filters.error, 400);

@@ -1294,6 +1294,7 @@ events is admin-side — see
 | `quest` | `main`, `side`, `bonus`, `4`, `all` | The Agenda screen's three sections |
 | `tag_id` | `3` | Filter by agenda tag (e.g., `Payments`, `Banking`, `AI`) |
 | `user_type` | `1` | Builder / Operator / Explorer, a `configs.id` of type `user_type` |
+| `stage_type` | `12`, `all` | A stage (e.g., Demo Stage, The Vault), a `configs.id` of type `stage-type` |
 | `search` | `stablecoin` | Matches name, speaker name, speaker company or location |
 | `saved` | `true` | Only what is on my schedule |
 | `sponsored` | `true` | Only sponsored events |

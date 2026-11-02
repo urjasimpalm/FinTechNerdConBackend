@@ -1878,7 +1878,7 @@
                 }
               ]
             },
-            "description": "Filters, all optional: `day` (a date `YYYY-MM-DD` **or** a configs.id of type `event-day`), `quest` (`main` / `side` / `bonus` / a configs.id), `tag_id` (agenda tag id), `user_type` (Builder / Operator / Explorer), `search` (name, speaker, company, location), `saved=true`, `sponsored=true`. `all` means no filter.\n\nChronological order. Past events are **returned, not hidden** \u2014 grey them out using `is_past`."
+            "description": "Filters, all optional: `day` (a date `YYYY-MM-DD` **or** a configs.id of type `event-day`), `quest` (`main` / `side` / `bonus` / a configs.id), `tag_id` (agenda tag id), `user_type` (Builder / Operator / Explorer), `stage_type` (a configs.id of type `stage-type`), `search` (name, speaker, company, location), `saved=true`, `sponsored=true`. `all` means no filter.\n\nChronological order. Past events are **returned, not hidden** \u2014 grey them out using `is_past`."
           },
           "event": [
             {
