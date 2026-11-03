@@ -293,7 +293,7 @@ async function idsFromJoin(
     .select("agenda_id")
     .eq(column, value);
   if (error) throw error;
-  return (data ?? []).map((row) => row.agenda_id as string);
+  return (data ?? []).map((row: { agenda_id: string }) => row.agenda_id);
 }
 
 /** Reads an optional numeric filter that also accepts `all`. */
@@ -439,7 +439,7 @@ async function listEvents(
       .eq("user_id", viewerId)
       .in("status", filters.onlyStatuses);
     if (error) throw error;
-    idSets.push((data ?? []).map((row) => row.agenda_id as string));
+    idSets.push((data ?? []).map((row: { agenda_id: string }) => row.agenda_id));
   }
 
   // Quest sections are named in public.configs, so "main" is resolved to the ids
@@ -513,14 +513,14 @@ async function listEvents(
     return fail("Something went wrong. Please try again.", 500);
   }
 
-  const ids = result.rows.map((row) => row.id as string);
+  const ids = result.rows.map((row: Record<string, unknown>) => row.id as string);
   const [states, lookups] = await Promise.all([
     myStates(viewerId, ids),
     loadLookups(ids),
   ]);
 
   const now = Date.now();
-  const events = result.rows.map((row) =>
+  const events = result.rows.map((row: Record<string, unknown>) =>
     shapeEvent(row, states.get(row.id as string) ?? NO_STATE, lookups, now)
   );
 
@@ -610,7 +610,7 @@ export async function getAgendaDays(url: URL, viewerId: string): Promise<Respons
   if (events.error) throw events.error;
   if (mine.error) throw mine.error;
 
-  const savedIds = new Set((mine.data ?? []).map((row) => row.agenda_id as string));
+  const savedIds = new Set((mine.data ?? []).map((row: { agenda_id: string }) => row.agenda_id));
 
   // Grouped here rather than in SQL: a conference agenda is a hundred-odd rows,
   // and a view would have to be maintained alongside the table.
@@ -717,7 +717,7 @@ async function missionCounters(viewerId: string): Promise<unknown[]> {
     });
   }
 
-  return (progress.data ?? []).map((row) => ({
+  return (progress.data ?? []).map((row: Record<string, unknown>) => ({
     mission_id: row.mission_id,
     times_completed: Number(row.times_completed ?? 0),
     points_awarded: Number(row.points_awarded ?? 0),
