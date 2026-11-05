@@ -36,11 +36,28 @@ Deno.serve(async (req) => {
     // The lookup itself succeeded either way — a miss is Success with
     // email_exist false, not an Error.
     const emailExists = exists === true;
+    if (!emailExists) {
+      return ok("This email is not on the attendee list.", { email_exist: false });
+    }
+
+    // On the list. If the person has already registered, say so instead, so the
+    // app can send them to Login rather than the sign-up form.
+    const { data: account, error: accountError } = await serviceClient()
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (accountError) {
+      console.error("users lookup failed", accountError);
+      return fail("Something went wrong. Please try again.", 500);
+    }
+
     return ok(
-      emailExists
-        ? "This email is on the attendee list."
-        : "This email is not on the attendee list.",
-      { email_exist: emailExists },
+      account
+        ? "There is already an account associated with this email address."
+        : "This email is on the attendee list.",
+      { email_exist: true },
     );
   } catch (err) {
     console.error("verify-email failed", err);
