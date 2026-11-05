@@ -53,12 +53,13 @@ Deno.serve(async (req) => {
       return fail("Something went wrong. Please try again.", 500);
     }
 
-    return ok(
-      account
-        ? "There is already an account associated with this email address."
-        : "This email is on the attendee list.",
-      { email_exist: true },
-    );
+    if (account) {
+      return ok("There is already an account associated with this email address.", {
+        email_exist: false,
+      });
+    }
+
+    return ok("This email is on the attendee list.", { email_exist: true });
   } catch (err) {
     console.error("verify-email failed", err);
     return fail("Something went wrong. Please try again.", 500);
