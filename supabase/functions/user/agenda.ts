@@ -112,9 +112,7 @@ const NO_STATE: MyState = { status: null, checked_in: false };
  * resolved, the tags split into primary and secondary, and the caller's own state
  * attached.
  *
- * `is_past` is computed here rather than filtered in the query, because the FRD
- * wants past events *shown* and greyed out ("users can look back at past days"),
- * not hidden.
+ * `is_past` is always false for now, so no event is greyed out.
  */
 function shapeEvent(
   row: Record<string, unknown>,
@@ -132,15 +130,6 @@ function shapeEvent(
   const tags = [...(lookups.tags.get(id) ?? [])].sort((a, b) =>
     a.is_primary === b.is_primary ? a.id - b.id : a.is_primary ? -1 : 1
   );
-
-  const endsAt = row.end_time ?? row.start_time;
-  const day = typeof row.day === "string" ? row.day : null;
-  const isPast = typeof endsAt === "string"
-    ? Date.parse(endsAt) < now
-    // No times on the event: fall back to the day being over.
-    : day !== null
-    ? Date.parse(`${day}T23:59:59Z`) < now
-    : false;
 
   // Parse speakers from JSONB if present
   let speakers: unknown[] = [];
@@ -167,7 +156,7 @@ function shapeEvent(
     is_sponsored: row.is_sponsored ?? false,
     sponsor_name: row.sponsor_name ?? null,
     user_types: lookups.audiences.get(id) ?? [],
-    is_past: isPast,
+    is_past: false,
     my_status: state.status,
     is_saved: state.status !== null && ON_SCHEDULE.includes(state.status),
     is_checked_in: state.checked_in,
@@ -638,7 +627,7 @@ export async function getAgendaDays(url: URL, viewerId: string): Promise<Respons
       event_count: 0,
       saved_count: 0,
       is_today: day === today,
-      is_past: day !== null && day < today,
+      is_past: false,
     };
     existing.event_count += 1;
     if (savedIds.has(row.id as string)) existing.saved_count += 1;
